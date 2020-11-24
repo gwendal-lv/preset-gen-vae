@@ -1,0 +1,6 @@
+
+.ipynb_checkpoints/*
+
+# Temp wav files can be generated in this folder
+*.wav
+
