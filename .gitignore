@@ -1,4 +1,5 @@
 
 # Python/IPython
 *.pyc
+*.ipynb_checkpoints
 
