@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/synth.iml" filepath="$PROJECT_DIR$/.idea/synth.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/nn-synth-interp.iml" filepath="$PROJECT_DIR$/.idea/nn-synth-interp.iml" />
     </modules>
   </component>
 </project>

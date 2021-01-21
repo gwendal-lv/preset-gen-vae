@@ -1,11 +1,17 @@
 
+import socket
+import os
 import numpy as np
 from scipy.io import wavfile
 import sqlite3
 import io
 import pandas as pd
 
-import librenderman as rm  # A symbolic link to the actual librenderman.so must be located in this script's folder
+# DB reading from the package itself
+import pathlib
+#import pkgutil
+
+import librenderman as rm  # A symbolic link to the actual librenderman.so must be found in the current folder
 
 
 # Pickled numpy arrays storage in sqlite3 DB
@@ -30,8 +36,10 @@ sqlite3.register_converter("NPARRAY", convert_array)
 
 
 class PresetDatabase:
-    def __init__(self, db_path):
-        self._db_path = db_path
+    def __init__(self):
+        """ Opens the SQLite DB and copies all presets internally. This uses more memory
+        but allows easy multithreaded usage from multiple parallel dataloaders (1 db per dataloader). """
+        self._db_path = pathlib.Path(__file__).parent.joinpath('dexed_presets.sqlite')  # pkgutil would be better
         self._conn = sqlite3.connect(self._db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         self._cur = self._conn.cursor()
         # We load the full presets table (full DB is usually a few dozens of megabytes)
@@ -82,10 +90,11 @@ class PresetDatabase:
 class Dexed:
     """ A Dexed (DX7) synth that can be used through RenderMan for offline wav rendering. """
 
-    def __init__(self, plugin_path="/home/gwendal/Jupyter/AudioPlugins/Dexed.so", db_path="./dexed_presets.sqlite",
+    def __init__(self, plugin_path="/home/gwendal/Jupyter/AudioPlugins/Dexed.so",
                  midi_note_duration_s=4.0, render_duration_s=5.0,
                  # TODO add folder for storing wav files
-                 sample_rate=44100, buffer_size=512, fft_size=512):
+                 sample_rate=22050,  # librosa default sr
+                 buffer_size=512, fft_size=512):
         self.midi_note_duration_s = midi_note_duration_s
         self.render_duration_s = render_duration_s
         self.render_folder = "./"
@@ -101,8 +110,11 @@ class Dexed:
         # A generator preset is a list of (int, float) tuples.
         self.preset_gen = rm.PatchGenerator(self.engine)  # 'RenderMan' generator
         self.current_preset = None
-        # Presets DB
-        self.preset_db = PresetDatabase(db_path)
+        # Presets DB - to be set after construction
+        self.preset_db = None
+
+    def set_preset_db(self, _preset_db):
+        self.preset_db = _preset_db
 
     def __str__(self):
         return "Plugin loaded from {}, Fs={}Hz, buffer {} samples. MIDI note on duration: {:.1f}s / {:.1f}s total. {}"\
@@ -129,10 +141,10 @@ class Dexed:
         """ Generates a random preset with a short release time - to ensure a limited-duration
          audio recording, and configures the rendering engine to use that preset. """
         self.current_preset = dexed.preset_gen.get_random_patch()
-        self._set_current_preset_short_release()
+        self.set_release_short()
         self.engine.set_patch(self.current_preset)
 
-    def _set_current_preset_short_release(self):
+    def set_release_short(self, eg_4_rate_min=0.5):
         for i, param in enumerate(self.current_preset):
             idx, value = param  # a param is actually a tuple...
             # Envelope release level: always to zero (or would be an actual hanging note)
@@ -140,7 +152,8 @@ class Dexed:
                 self.current_preset[i] = (idx, 0.0)
             # Envelope release time: quite short (higher float value: shorter release)
             elif idx == 26 or idx == 48 or idx == 70 or idx == 92 or idx == 114 or idx == 136:
-                self.current_preset[i] = (idx, max(0.33, value))  # Min 33%
+                self.current_preset[i] = (idx, max(eg_4_rate_min, value))
+        self.engine.set_patch(self.current_preset)
 
     def set_default_general_filter_and_tune_params(self):
         assert self.current_preset is not None
@@ -199,6 +212,9 @@ class Dexed:
 
 
 if __name__ == "__main__":
+
+    print("Machine: '{}' ({} CPUs)".format(socket.gethostname(), os.cpu_count()))
+
     dexed = Dexed()
     print(dexed)
     print("Plugin params: ")

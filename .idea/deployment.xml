@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="gwendal@grospyter.irisib.be:6400 key" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;*.ipynb" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="gwendal@grospyter.irisib.be:6400 key">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/gwendal/Jupyter/nn-synth-interp" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>
