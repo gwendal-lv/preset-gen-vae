@@ -3,3 +3,7 @@
 *.pyc
 *.ipynb_checkpoints
 
+# symlinks to renderman
+librenderman.so
+synth/librenderman.so
+
