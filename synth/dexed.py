@@ -1,5 +1,6 @@
 
 import socket
+import sys
 import os
 import numpy as np
 from scipy.io import wavfile
@@ -40,16 +41,23 @@ class PresetDatabase:
         """ Opens the SQLite DB and copies all presets internally. This uses more memory
         but allows easy multithreaded usage from multiple parallel dataloaders (1 db per dataloader). """
         self._db_path = pathlib.Path(__file__).parent.joinpath('dexed_presets.sqlite')  # pkgutil would be better
-        self._conn = sqlite3.connect(self._db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-        self._cur = self._conn.cursor()
+        conn = sqlite3.connect(self._db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        cur = conn.cursor()
         # We load the full presets table (full DB is usually a few dozens of megabytes)
-        self._all_presets_df = pd.read_sql_query("SELECT * FROM preset", self._conn)
+        self._all_presets_df = pd.read_sql_query("SELECT * FROM preset", conn)
         # 20 megabytes for 30 000 presets
-        self._presets_mat = [self._all_presets_df.iloc[i]['pickled_params_np_array']
-                             for i in range(len(self._all_presets_df))]
-        self._presets_mat = np.asarray(self._presets_mat)
-        self._preset_algos = self._presets_mat[:, 4]
+        self.presets_mat = [self._all_presets_df.iloc[i]['pickled_params_np_array']
+                            for i in range(len(self._all_presets_df))]
+        self.presets_mat = np.asarray(self.presets_mat, dtype=np.float32)
+        # Memory save: param values are removed from the main dataframe
+        self._all_presets_df.drop(columns='pickled_params_np_array', inplace=True)
+        # Algorithms are also separately stored
+        self._preset_algos = self.presets_mat[:, 4]
         self._preset_algos = np.asarray(np.round(1.0 + self._preset_algos * 31.0), dtype=np.int)
+        # We also pre-load the names in order to close the sqlite DB
+        names_df = pd.read_sql_query("SELECT * FROM param ORDER BY index_param", conn)
+        self._param_names = names_df['name'].to_list()
+        conn.close()
 
     def __str__(self):
         return "{} DX7 presets in database '{}'.".format(len(self._all_presets_df), self._db_path)
@@ -66,17 +74,21 @@ class PresetDatabase:
         :param idx: the preset 'row line' in the DB (not the index_preset value, which is an ID)
         :param plugin_format: if True, returns a list of (param_index, param_value) tuples. If False, returns the
             numpy array of param values. """
+        preset_values = self.presets_mat[idx, :]
         if plugin_format:
-            preset_values = self._all_presets_df.iloc[idx]['pickled_params_np_array']
-            preset_values = np.asarray(preset_values, dtype=np.double)  # np.float32 is not valid for RenderMan
-            # Dexed parameters are nicely ordered from 0 to 154
-            return [(i, preset_values[i]) for i in range(preset_values.shape[0])]
+            return self.get_params_in_plugin_format(preset_values)
         else:
-            return self._all_presets_df.iloc[idx]['pickled_params_np_array']
+            return preset_values
+
+    @staticmethod
+    def get_params_in_plugin_format(params):
+        """ Converts a 1D array of param values into an list of (idx, param_value) tuples """
+        preset_values = np.asarray(params, dtype=np.double)  # np.float32 is not valid for RenderMan
+        # Dexed parameters are nicely ordered from 0 to 154
+        return [(i, preset_values[i]) for i in range(preset_values.shape[0])]
 
     def get_param_names(self):
-        names_df = pd.read_sql_query("SELECT * FROM param ORDER BY index_param", self._conn)
-        return names_df['name'].to_list()
+        return self._param_names
 
     def get_preset_indexes_for_algorithm(self, algo):
         """ Returns a list of indexes of presets using the given algorithm in [[1 ; 32]] """
@@ -86,18 +98,24 @@ class PresetDatabase:
                 indexes.append(i)
         return indexes
 
+    def get_size_info(self):
+        """ Prints a detailed view of the size of this class and its main elements """
+        main_df_size = self._all_presets_df.memory_usage(deep=True).values.sum()
+        preset_values_size = self.presets_mat.size * self.presets_mat.itemsize
+        return "Dexed Presets Database class size: " \
+               "preset values matrix {:.1f} MB, presets dataframe {:.1f} MB"\
+            .format(preset_values_size/(2**20), main_df_size/(2**20))
+
 
 class Dexed:
     """ A Dexed (DX7) synth that can be used through RenderMan for offline wav rendering. """
 
     def __init__(self, plugin_path="/home/gwendal/Jupyter/AudioPlugins/Dexed.so",
                  midi_note_duration_s=4.0, render_duration_s=5.0,
-                 # TODO add folder for storing wav files
                  sample_rate=22050,  # librosa default sr
                  buffer_size=512, fft_size=512):
         self.midi_note_duration_s = midi_note_duration_s
         self.render_duration_s = render_duration_s
-        self.render_folder = "./"
 
         self.plugin_path = plugin_path
         self.Fs = sample_rate
@@ -110,19 +128,23 @@ class Dexed:
         # A generator preset is a list of (int, float) tuples.
         self.preset_gen = rm.PatchGenerator(self.engine)  # 'RenderMan' generator
         self.current_preset = None
-        # Presets DB - to be set after construction
-        self.preset_db = None
-
-    def set_preset_db(self, _preset_db):
-        self.preset_db = _preset_db
 
     def __str__(self):
-        return "Plugin loaded from {}, Fs={}Hz, buffer {} samples. MIDI note on duration: {:.1f}s / {:.1f}s total. {}"\
+        return "Plugin loaded from {}, Fs={}Hz, buffer {} samples."\
+               "MIDI note on duration: {:.1f}s / {:.1f}s total. {}"\
             .format(self.plugin_path, self.Fs, self.buffer_size,
-                    self.midi_note_duration_s, self.render_duration_s, str(self.preset_db))
+                    self.midi_note_duration_s, self.render_duration_s)
 
-    def render_note(self, midi_note, midi_velocity, filename="./dexed_output.wav"):
-        """ Render a midi note and stores it to a 16-bit PCM wav file. """
+    def render_note(self, midi_note, midi_velocity):
+        """ Renders a midi note (for the currently set patch) and returns the normalized float array. """
+        self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
+        audio_out = self.engine.get_audio_frames()
+        audio = np.asarray(audio_out)
+        return audio / np.abs(audio).max()
+
+    def render_note_to_file(self, midi_note, midi_velocity, filename="./dexed_output.wav"):
+        """ Renders a midi note (for the currently set patch), normalizes it and stores it
+        to a 16-bit PCM wav file. """
         self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
         # RenderMan wav writing is broken - using scipy instead
         audio_out = self.engine.get_audio_frames()
@@ -132,9 +154,9 @@ class Dexed:
         audio = np.array(np.round(audio), dtype=np.int16)
         wavfile.write(filename, self.Fs, audio)
 
-    def assign_preset_from_db(self, idx):
-        """ :param idx: Preset index in [0 ; len(db)-1] """
-        self.current_preset = self.preset_db.get_preset_values(idx, plugin_format=True)
+    def assign_preset(self, preset):
+        """ :param preset: List of tuples (param_idx, param_value) """
+        self.current_preset = preset
         self.engine.set_patch(self.current_preset)
 
     def assign_random_preset_short_release(self):
