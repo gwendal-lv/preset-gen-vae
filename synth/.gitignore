@@ -4,3 +4,9 @@
 # Temp wav files can be generated in this folder
 *.wav
 
+# TODO add these to the repo?
+dexed_presets/*
+
+# temp backup sqlite DBs
+*.backup
+

@@ -2,6 +2,7 @@
 import socket
 import sys
 import os
+import pickle
 import numpy as np
 from scipy.io import wavfile
 import sqlite3
@@ -40,17 +41,17 @@ class PresetDatabase:
     def __init__(self):
         """ Opens the SQLite DB and copies all presets internally. This uses more memory
         but allows easy multithreaded usage from multiple parallel dataloaders (1 db per dataloader). """
-        self._db_path = pathlib.Path(__file__).parent.joinpath('dexed_presets.sqlite')  # pkgutil would be better
+        self._db_path = self._get_db_path()
         conn = sqlite3.connect(self._db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         cur = conn.cursor()
         # We load the full presets table (full DB is usually a few dozens of megabytes)
-        self._all_presets_df = pd.read_sql_query("SELECT * FROM preset", conn)
+        self.all_presets_df = pd.read_sql_query("SELECT * FROM preset", conn)
         # 20 megabytes for 30 000 presets
-        self.presets_mat = [self._all_presets_df.iloc[i]['pickled_params_np_array']
-                            for i in range(len(self._all_presets_df))]
+        self.presets_mat = [self.all_presets_df.iloc[i]['pickled_params_np_array']
+                            for i in range(len(self.all_presets_df))]
         self.presets_mat = np.asarray(self.presets_mat, dtype=np.float32)
         # Memory save: param values are removed from the main dataframe
-        self._all_presets_df.drop(columns='pickled_params_np_array', inplace=True)
+        self.all_presets_df.drop(columns='pickled_params_np_array', inplace=True)
         # Algorithms are also separately stored
         self._preset_algos = self.presets_mat[:, 4]
         self._preset_algos = np.asarray(np.round(1.0 + self._preset_algos * 31.0), dtype=np.int)
@@ -59,14 +60,18 @@ class PresetDatabase:
         self._param_names = names_df['name'].to_list()
         conn.close()
 
+    @staticmethod
+    def _get_db_path():
+        return pathlib.Path(__file__).parent.joinpath('dexed_presets.sqlite')  # pkgutil would be better
+
     def __str__(self):
-        return "{} DX7 presets in database '{}'.".format(len(self._all_presets_df), self._db_path)
+        return "{} DX7 presets in database '{}'.".format(len(self.all_presets_df), self._db_path)
 
     def get_nb_presets(self):
-        return len(self._all_presets_df)
+        return len(self.all_presets_df)
 
     def get_preset_name(self, idx):
-        return self._all_presets_df.iloc[idx]['name']
+        return self.all_presets_df.iloc[idx]['name']
 
     def get_preset_values(self, idx, plugin_format=False):
         """ Returns a preset from the DB.
@@ -100,11 +105,49 @@ class PresetDatabase:
 
     def get_size_info(self):
         """ Prints a detailed view of the size of this class and its main elements """
-        main_df_size = self._all_presets_df.memory_usage(deep=True).values.sum()
+        main_df_size = self.all_presets_df.memory_usage(deep=True).values.sum()
         preset_values_size = self.presets_mat.size * self.presets_mat.itemsize
         return "Dexed Presets Database class size: " \
                "preset values matrix {:.1f} MB, presets dataframe {:.1f} MB"\
             .format(preset_values_size/(2**20), main_df_size/(2**20))
+
+    @staticmethod
+    def _get_presets_folder():
+        return pathlib.Path(__file__).parent.absolute().joinpath('dexed_presets')
+
+    def write_all_presets_to_files(self):
+        """ Write all presets' parameter values to separate pickled files, for multi-processed multi-worker
+        DataLoader. File names are presetXXXXXX_params.pickle where XXXXXX is the preset UID (it is not
+        its row index in the SQLite database).
+
+        Presets' names will be written to presetXXXXXX_name.txt
+
+        All files will be written to ./dexed_presets/ """
+        presets_folder = self._get_presets_folder()
+        if not os.path.exists(presets_folder):
+            os.makedirs(presets_folder)
+        for i in range(len(self.presets_mat)):
+            preset_UID = self.all_presets_df.iloc[i]['index_preset']
+            preset_name = self.all_presets_df.iloc[i]['name']
+            param_values = self.presets_mat[i, :]
+            base_name = "preset{:06d}_".format(preset_UID)
+            # ((un-)pickling has been done far too many times for these presets... could have been optimized)
+            with open(presets_folder.joinpath(base_name + "params.pickle"), 'wb') as f:
+                pickle.dump(param_values, f)
+            with open(presets_folder.joinpath(base_name + "name.txt"), 'w') as f:
+                f.write(preset_name)
+
+    @staticmethod
+    def get_preset_params_values_from_file(preset_UID):
+        return np.load(PresetDatabase._get_presets_folder()
+                       .joinpath( "preset{:06d}_params.pickle".format(preset_UID)), allow_pickle=True)
+
+    @staticmethod
+    def get_preset_name_from_file(preset_UID):
+        with open(PresetDatabase._get_presets_folder()
+                  .joinpath( "preset{:06d}_name.txt".format(preset_UID)), 'r') as f:
+            name = f.read()
+        return name
 
 
 class Dexed:
@@ -131,20 +174,26 @@ class Dexed:
 
     def __str__(self):
         return "Plugin loaded from {}, Fs={}Hz, buffer {} samples."\
-               "MIDI note on duration: {:.1f}s / {:.1f}s total. {}"\
+               "MIDI note on duration: {:.1f}s / {:.1f}s total."\
             .format(self.plugin_path, self.Fs, self.buffer_size,
                     self.midi_note_duration_s, self.render_duration_s)
 
-    def render_note(self, midi_note, midi_velocity):
+    def render_note(self, midi_note, midi_velocity, normalize=False):
         """ Renders a midi note (for the currently set patch) and returns the normalized float array. """
         self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
         audio_out = self.engine.get_audio_frames()
         audio = np.asarray(audio_out)
-        return audio / np.abs(audio).max()
+        if np.abs(audio).max() < 0.001:  # max à -60dB
+            pass#print("Problème : preset zéro")
+        if normalize:
+            return audio / np.abs(audio).max()
+        else:
+            return audio
 
     def render_note_to_file(self, midi_note, midi_velocity, filename="./dexed_output.wav"):
         """ Renders a midi note (for the currently set patch), normalizes it and stores it
         to a 16-bit PCM wav file. """
+        assert False  # deprecated function
         self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
         # RenderMan wav writing is broken - using scipy instead
         audio_out = self.engine.get_audio_frames()
@@ -167,6 +216,7 @@ class Dexed:
         self.engine.set_patch(self.current_preset)
 
     def set_release_short(self, eg_4_rate_min=0.5):
+        assert False  # deprecated - should return the modified params as well
         for i, param in enumerate(self.current_preset):
             idx, value = param  # a param is actually a tuple...
             # Envelope release level: always to zero (or would be an actual hanging note)
@@ -178,6 +228,7 @@ class Dexed:
         self.engine.set_patch(self.current_preset)
 
     def set_default_general_filter_and_tune_params(self):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
         assert self.current_preset is not None
         self.current_preset[0] = (0, 1.0)  # filter cutoff
         self.current_preset[1] = (1, 0.0)  # filter reso
@@ -185,12 +236,39 @@ class Dexed:
         self.current_preset[3] = (3, 0.5)  # master tune
         self.current_preset[13] = (13, 0.5)  # Sets the 'middle-C' note to the default C3 value
         self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    @staticmethod
+    def set_default_general_filter_and_tune_params_(preset_params):
+        """ Modifies some params in-place for the given numpy array """
+        preset_params[[0, 1, 2, 3, 13]] = np.asarray([1.0, 0.0, 1.0, 0.5, 0.5])
+
+    def set_all_oscillators_on(self):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
+        assert self.current_preset is not None
+        for idx in [44, 66, 88, 110, 132, 154]:
+            self.current_preset[idx] = (idx, 1.0)
+        self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    @staticmethod
+    def set_all_oscillators_on_(preset_params):
+        """ Modifies some params in-place for the given numpy array """
+        preset_params[[44, 66, 88, 110, 132, 154]] = np.asarray([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 
     def prevent_SH_LFO(self):
-        """ If the LFO Wave is random S&H, transforms it into a square LFO wave to get deterministic results. """
+        """ If the LFO Wave is random S&H, transforms it into a square LFO wave to get deterministic
+        results. Internally sets the modified preset, and returns the list of parameter values.  """
         if self.current_preset[12][1] > 0.95:  # S&H wave corresponds to a 1.0 param value
             self.current_preset[12] = (12, 4.0 / 5.0)  # Square wave is number 4/6
         self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    @staticmethod
+    def prevent_SH_LFO_(preset_params):
+        """ Modifies some params in-place for the given numpy array """
+        if preset_params[12] > 0.95:
+            preset_params[12] = 4.0 / 5.0
 
     @staticmethod
     def get_param_cardinality(param_index):
@@ -237,6 +315,19 @@ if __name__ == "__main__":
 
     print("Machine: '{}' ({} CPUs)".format(socket.gethostname(), os.cpu_count()))
 
+    dexed_db = PresetDatabase()
+    names = dexed_db.get_param_names()
+
+    # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****
+    # Approx. 244Mo (yep, the SQLite DB is much lighter...)
+    dexed_db.write_all_presets_to_files()
+
+    # Test de lecture des fichiers pickled - pas besoin de la DB lue en entier
+    preset_values = PresetDatabase.get_preset_params_values_from_file(0)
+    preset_name = PresetDatabase.get_preset_name_from_file(0)
+    print(preset_name)
+
+    # Test du synth lui-même
     dexed = Dexed()
     print(dexed)
     print("Plugin params: ")
@@ -249,10 +340,7 @@ if __name__ == "__main__":
 
     #dexed.render_note(57, 100, filename="Test.wav")
 
-    names = dexed.preset_db.get_param_names()
+    print("{} presets use algo 5".format(len(dexed_db.get_preset_indexes_for_algorithm(5))))
 
-    print("{} presets use algo 5".format(len(dexed.preset_db.get_preset_indexes_for_algorithm(5))))
 
     pass
-
-
