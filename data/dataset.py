@@ -82,10 +82,14 @@ class DexedDataset(torch.utils.data.Dataset):
                 .iloc[valid_presets_row_indexes]['index_preset'].values
         # DB class deleted (we need a low memory usage for multi-process dataloaders)
         del dexed_db
-        # TODO try load spectrogram min/max/mean/std statistics
-        # If not pre-computed stats are found: default 0.0, 1.0 mean/std will be used
-        self.spectrogram_std = 1.0
-        self.spectrogram_mean = 0.0
+        # try load spectrogram min/max/mean/std statistics
+        try:
+            f = open(self._get_spectrogram_stats_file(), 'r')
+            self.spectrogram_stats = json.load(f)
+        except IOError:
+            self.spectrogram_stats = {'mean': 0.0, 'std': 1.0}  # corresponds to no scaling
+            print("[DexedDataset] No pre-computed spectrogram stats can be found."
+                  " Default 0.0 mean, 1.0 std will be used")
 
     def __len__(self):
         return len(self.valid_preset_UIDs)
@@ -100,8 +104,8 @@ class DexedDataset(torch.utils.data.Dataset):
         return preset_params
 
     def __getitem__(self, i):
-        """ Returns a tuple containing a 2D tensor spectrogram (1st dim: time; 2nd dim: frequency),
-        a 1D tensor of parameter values, and a 1d tensor with the midi note and velocity.
+        """ Returns a tuple containing a 2D scaled dB spectrogram tensor (1st dim: freq; 2nd dim: time),
+        a 1D tensor of parameter values in [0;1], and a 1d tensor with the midi note and velocity.
 
         If this dataset generates audio directly from the synth, only 1 dataloader is allowed.
         A 30000 presets dataset require approx. 7 minutes to be generated on 1 CPU. """
@@ -111,17 +115,12 @@ class DexedDataset(torch.utils.data.Dataset):
         preset_UID = self.valid_preset_UIDs[i]
         preset_name = dexed.PresetDatabase.get_preset_name_from_file(preset_UID)  # debug purposes
         preset_params = self.get_preset_params(preset_UID)
-        with dexed_vst_lock:
-            dexed_renderer = dexed.Dexed()  # reloads the VST to prevent hanging notes/sounds
-            dexed_renderer.assign_preset(dexed.PresetDatabase.get_params_in_plugin_format(preset_params))
-        # on-the-fly audio rendering (easier framework for future data augmentation tests)
-        #x_wav = dexed_renderer.render_note(midi_note, midi_velocity, normalize=self.normalize_audio)
-        # TODO vrai audio à remettre ici
-        x_wav = np.zeros((1, 22050*5))
+        x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
+        spectrogram = self.torch_spectrogram(torch.tensor(x_wav, dtype=torch.float32))
         # Tuple output. Warning: torch.from_numpy does not copy values
-        return self.torch_spectrogram(torch.tensor(x_wav, dtype=torch.float32)), \
-               torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
-               torch.tensor([midi_note, midi_velocity], dtype=torch.int8)
+        return (spectrogram - self.spectrogram_stats['mean'])/self.spectrogram_stats['std'], \
+            torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
+            torch.tensor([midi_note, midi_velocity], dtype=torch.int8)
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
         """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate. """
@@ -144,13 +143,17 @@ class DexedDataset(torch.utils.data.Dataset):
             .format(len(self), self.total_nb_presets, len(self.learnable_params_idx),
                     self.total_nb_params - len(self.learnable_params_idx))
 
+    @staticmethod
+    def _get_spectrogram_stats_folder():
+        return pathlib.Path(__file__).parent.joinpath('stats')
+
     def _get_spectrogram_stats_file(self):
-        return pathlib.Path(__file__).parent.joinpath(
-            'stats/DexedDataset_spectrogram_nfft{:04d}hop{:04d}.json'.format(self.n_fft, self.fft_hop))
+        return self._get_spectrogram_stats_folder().joinpath(
+            'DexedDataset_spectrogram_nfft{:04d}hop{:04d}.json'.format(self.n_fft, self.fft_hop))
 
     def _get_spectrogram_full_stats_file(self):
-        return pathlib.Path(__file__).parent.joinpath(
-            'stats/DexedDataset_spectrogram_nfft{:04d}hop{:04d}_full.csv'.format(self.n_fft, self.fft_hop))
+        return self._get_spectrogram_stats_folder().joinpath(
+            'DexedDataset_spectrogram_nfft{:04d}hop{:04d}_full.csv'.format(self.n_fft, self.fft_hop))
 
     # TODO finir
     def compute_and_store_spectrograms_stats(self):
@@ -159,23 +162,46 @@ class DexedDataset(torch.utils.data.Dataset):
         and dataset-wide averaged results are stored into a .json file
 
         This functions must be re-run when spectrogram parameters are changed. """
-        full_stats = {'UID': [], 'min': [], 'max': [], 'mean': [], 'std': []}
-        dataset_stats = {'min': 0.0, 'max': 0.0, 'mean': 0.0, 'std': 0.0}
+        full_stats = {'UID': [], 'min': [], 'max': [], 'mean': [], 'var': []}
         for i in range(len(self)):
+            # We use the exact same spectrogram as the dataloader will
+            x_wav, Fs = self.get_wav_file(self.valid_preset_UIDs[i],
+                                          self.midi_note, self.midi_velocity)
+            assert Fs == 22050
+            tensor_spectrogram = self.torch_spectrogram(torch.tensor(x_wav, dtype=torch.float32))
+            full_stats['UID'].append(self.valid_preset_UIDs[i])
+            full_stats['min'].append(torch.min(tensor_spectrogram).item())
+            full_stats['max'].append(torch.max(tensor_spectrogram).item())
+            full_stats['var'].append(torch.var(tensor_spectrogram).item())
+            full_stats['mean'].append(torch.mean(tensor_spectrogram, dim=(0, 1)).item())
             if i % 5000 == 0:
-                print("Processed {}/{} spectrograms".format(i, len(self)))
-                # TODO finir ça
-        # We can average variance only
-        # Final output and return
+                print("Processed stats of {}/{} spectrograms".format(i, len(self)))
+        for key in full_stats:
+            full_stats[key] = np.asarray(full_stats[key])
+        # Average of all columns (std: sqrt(variance avg))
+        dataset_stats = {'min': full_stats['min'].min(),
+                         'max': full_stats['max'].max(),
+                         'mean': full_stats['mean'].mean(),
+                         'std': np.sqrt(full_stats['var'].mean()) }
+        full_stats['std'] = np.sqrt(full_stats['var'])
+        del full_stats['var']
+        # Final output
+        if not os.path.exists(self._get_spectrogram_stats_folder()):
+            os.makedirs(self._get_spectrogram_stats_folder())
+        full_stats = pd.DataFrame(full_stats)
+        full_stats.to_csv(self._get_spectrogram_full_stats_file())
         with open(self._get_spectrogram_stats_file(), 'w') as f:
             json.dump(dataset_stats, f)
-        return  # TODO
 
     @staticmethod
     def get_wav_file_path(preset_UID, midi_note, midi_velocity):
         presets_folder = dexed.PresetDatabase._get_presets_folder()
         filename = "preset{:06d}_midi{:03d}vel{:03d}.wav".format(preset_UID, midi_note, midi_velocity)
         return presets_folder.joinpath(filename)
+
+    @staticmethod
+    def get_wav_file(preset_UID, midi_note, midi_velocity):
+        return soundfile.read(DexedDataset.get_wav_file_path(preset_UID, midi_note, midi_velocity))
 
     def generate_wav_files(self):
         """ Reads all presets from .pickle and .txt files
