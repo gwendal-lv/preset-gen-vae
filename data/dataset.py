@@ -7,7 +7,9 @@ import json
 import torch
 import torch.nn as nn
 import torch.utils
+import torch.fft
 import torchaudio.transforms
+import torchaudio.functional
 import soundfile
 import numpy as np
 import copy
@@ -26,9 +28,9 @@ dexed_vst_lock = Lock()
 class DexedDataset(torch.utils.data.Dataset):
     def __init__(self, algos=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
-                 n_fft=1024, fft_hop=512,  # obtained spectrogram is roughly the same size as 22.05kHz audio
+                 n_fft=1024, fft_hop=256,  # w/ hop=512: spectrogram is approx. the same size as 5.0s@22.05kHz audio
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
-                 normalize_audio=False):
+                 normalize_audio=False, spectrogram_min_dB=-200.0, spectrogram_dynamic_range_dB=100.0):
         """
         Allows access to Dexed preset values and names, and generates spectrograms and corresponding
         parameters values. Can manage a reduced number of synth parameters (using default values for non-
@@ -37,28 +39,24 @@ class DexedDataset(torch.utils.data.Dataset):
         :param algos: List. Can be used to limit the DX7 algorithms included in this dataset. Set to None
         to use all available algorithms
         :param constant_filter_and_tune_params: if True, the main filter and the main tune settings are default
-        :param prevent_SH_LFO: if True, replaces the SH random LFO by a square-wave LFO
+        :param prevent_SH_LFO: if True, replaces the SH random LFO by a square-wave deterministic LFO
         :param n_mel_bins: Number of frequency bins for the Mel-spectrogram. If -1, the normal STFT will be
         used instead.
         """
+        self.spectrogram_dynamic_range_dB = spectrogram_dynamic_range_dB
+        self.spectrogram_min_dB = spectrogram_min_dB
         self.normalize_audio = normalize_audio
         self.mel_fmax = mel_fmax
         self.mel_fmin = mel_fmin
         self.n_mel_bins = n_mel_bins
         self.fft_hop = fft_hop
         self.n_fft = n_fft
-        # Default spectr. params: Hann window, power spectrogram, un-normalized
-        self.torch_spectrogram = nn.Sequential(
-            torchaudio.transforms.Spectrogram(n_fft=self.n_fft, hop_length=fft_hop,
-                                              pad=0),  # conv kernels should zero-pad
-            torchaudio.transforms.AmplitudeToDB('power', top_db=80)
-        )
         self.midi_note = midi_note
         self.midi_velocity = midi_velocity
         self.prevent_SH_LFO = prevent_SH_LFO
         self.constant_filter_and_tune_params = constant_filter_and_tune_params
         self.algos = algos if algos is not None else []
-        # - - - Full SQLite DB read and temp storage in np arrays. After pre-processing
+        # - - - Full SQLite DB read and temp storage in np arrays
         dexed_db = dexed.PresetDatabase()
         self.total_nb_presets = dexed_db.presets_mat.shape[0]
         self.total_nb_params = dexed_db.presets_mat.shape[1]
@@ -82,6 +80,9 @@ class DexedDataset(torch.utils.data.Dataset):
                 .iloc[valid_presets_row_indexes]['index_preset'].values
         # DB class deleted (we need a low memory usage for multi-process dataloaders)
         del dexed_db
+        # - - - Spectrogram pre-computations
+        self.spectrogram_window = torch.hann_window(self.n_fft, periodic=False)
+        self.spectrogram_norm_factor = torch.fft.rfft(self.spectrogram_window).abs().max().item()
         # try load spectrogram min/max/mean/std statistics
         try:
             f = open(self._get_spectrogram_stats_file(), 'r')
@@ -103,9 +104,23 @@ class DexedDataset(torch.utils.data.Dataset):
             dexed.Dexed.prevent_SH_LFO_(preset_params)
         return preset_params
 
+    def get_spectrogram(self, x_wav):
+        """ Returns the spectrogram of x_wav. Does not apply mu/sigma (dataset-wide values) normalization. """
+        spectrogram = torch.stft(torch.tensor(x_wav, dtype=torch.float32), n_fft=self.n_fft, hop_length=self.fft_hop,
+                                 window=self.spectrogram_window, center=True,
+                                 pad_mode='constant', onesided=True, return_complex=True).abs()
+        # normalization of spectrogram module vs. Hann window weight / min / dynamic dB range
+        spectrogram = spectrogram / self.spectrogram_norm_factor
+        spectrogram = torch.maximum(spectrogram,
+                                    torch.ones(spectrogram.size()) * 10 ** (self.spectrogram_min_dB / 20.0))
+        spectrogram = 20.0 * torch.log10(spectrogram)
+        spectrogram = torch.maximum(spectrogram, torch.ones(spectrogram.size())
+                                    * (torch.max(spectrogram) - self.spectrogram_dynamic_range_dB))
+        return spectrogram
+
     def __getitem__(self, i):
         """ Returns a tuple containing a 2D scaled dB spectrogram tensor (1st dim: freq; 2nd dim: time),
-        a 1D tensor of parameter values in [0;1], and a 1d tensor with the midi note and velocity.
+        a 1D tensor of parameter values in [0;1], and a 1d tensor with remaining int info (preset UID, midi note, vel).
 
         If this dataset generates audio directly from the synth, only 1 dataloader is allowed.
         A 30000 presets dataset require approx. 7 minutes to be generated on 1 CPU. """
@@ -113,14 +128,15 @@ class DexedDataset(torch.utils.data.Dataset):
         midi_velocity = self.midi_velocity
         # loading and pre-processing
         preset_UID = self.valid_preset_UIDs[i]
-        preset_name = dexed.PresetDatabase.get_preset_name_from_file(preset_UID)  # debug purposes
+        #preset_name = dexed.PresetDatabase.get_preset_name_from_file(preset_UID)  # debug purposes
         preset_params = self.get_preset_params(preset_UID)
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
-        spectrogram = self.torch_spectrogram(torch.tensor(x_wav, dtype=torch.float32))
+        spectrogram = (self.get_spectrogram(x_wav) - self.spectrogram_stats['mean'])/self.spectrogram_stats['std']
         # Tuple output. Warning: torch.from_numpy does not copy values
-        return (spectrogram - self.spectrogram_stats['mean'])/self.spectrogram_stats['std'], \
+        # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
+        return torch.unsqueeze(spectrogram, 0), \
             torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
-            torch.tensor([midi_note, midi_velocity], dtype=torch.int8)
+            torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32)
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
         """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate. """
@@ -155,7 +171,6 @@ class DexedDataset(torch.utils.data.Dataset):
         return self._get_spectrogram_stats_folder().joinpath(
             'DexedDataset_spectrogram_nfft{:04d}hop{:04d}_full.csv'.format(self.n_fft, self.fft_hop))
 
-    # TODO finir
     def compute_and_store_spectrograms_stats(self):
         """ Compute min,max,mean,std on all presets previously rendered as wav files.
         Per-preset results are stored into a .csv file
@@ -168,7 +183,7 @@ class DexedDataset(torch.utils.data.Dataset):
             x_wav, Fs = self.get_wav_file(self.valid_preset_UIDs[i],
                                           self.midi_note, self.midi_velocity)
             assert Fs == 22050
-            tensor_spectrogram = self.torch_spectrogram(torch.tensor(x_wav, dtype=torch.float32))
+            tensor_spectrogram = self.get_spectrogram(x_wav)
             full_stats['UID'].append(self.valid_preset_UIDs[i])
             full_stats['min'].append(torch.min(tensor_spectrogram).item())
             full_stats['max'].append(torch.max(tensor_spectrogram).item())
@@ -231,7 +246,7 @@ if __name__ == "__main__":
     # WRITE ALL WAV FILES (approx. 13Go)
     # dexed_dataset.generate_wav_files()
 
-    # TODO stats sur les spectrogrammes de tout le dataset - sauvegarder en CSV
+    # stats sur les spectrogrammes de tout le dataset
     dexed_dataset.compute_and_store_spectrograms_stats()
 
     # Dataloader test
