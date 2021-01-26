@@ -16,6 +16,7 @@ import copy
 import sys
 
 from synth import dexed
+import utils.audio
 
 # See https://github.com/pytorch/audio/issues/903
 #torchaudio.set_audio_backend("sox_io")
@@ -43,8 +44,6 @@ class DexedDataset(torch.utils.data.Dataset):
         :param n_mel_bins: Number of frequency bins for the Mel-spectrogram. If -1, the normal STFT will be
         used instead.
         """
-        self.spectrogram_dynamic_range_dB = spectrogram_dynamic_range_dB
-        self.spectrogram_min_dB = spectrogram_min_dB
         self.normalize_audio = normalize_audio
         self.mel_fmax = mel_fmax
         self.mel_fmin = mel_fmin
@@ -80,9 +79,9 @@ class DexedDataset(torch.utils.data.Dataset):
                 .iloc[valid_presets_row_indexes]['index_preset'].values
         # DB class deleted (we need a low memory usage for multi-process dataloaders)
         del dexed_db
-        # - - - Spectrogram pre-computations
-        self.spectrogram_window = torch.hann_window(self.n_fft, periodic=False)
-        self.spectrogram_norm_factor = torch.fft.rfft(self.spectrogram_window).abs().max().item()
+        # - - - Spectrogram
+        self.spectrogram = utils.audio.Spectrogram(self.n_fft, self.fft_hop,
+                                                   spectrogram_min_dB, spectrogram_dynamic_range_dB)
         # try load spectrogram min/max/mean/std statistics
         try:
             f = open(self._get_spectrogram_stats_file(), 'r')
@@ -104,20 +103,6 @@ class DexedDataset(torch.utils.data.Dataset):
             dexed.Dexed.prevent_SH_LFO_(preset_params)
         return preset_params
 
-    def get_spectrogram(self, x_wav):
-        """ Returns the spectrogram of x_wav. Does not apply mu/sigma (dataset-wide values) normalization. """
-        spectrogram = torch.stft(torch.tensor(x_wav, dtype=torch.float32), n_fft=self.n_fft, hop_length=self.fft_hop,
-                                 window=self.spectrogram_window, center=True,
-                                 pad_mode='constant', onesided=True, return_complex=True).abs()
-        # normalization of spectrogram module vs. Hann window weight / min / dynamic dB range
-        spectrogram = spectrogram / self.spectrogram_norm_factor
-        spectrogram = torch.maximum(spectrogram,
-                                    torch.ones(spectrogram.size()) * 10 ** (self.spectrogram_min_dB / 20.0))
-        spectrogram = 20.0 * torch.log10(spectrogram)
-        spectrogram = torch.maximum(spectrogram, torch.ones(spectrogram.size())
-                                    * (torch.max(spectrogram) - self.spectrogram_dynamic_range_dB))
-        return spectrogram
-
     def __getitem__(self, i):
         """ Returns a tuple containing a 2D scaled dB spectrogram tensor (1st dim: freq; 2nd dim: time),
         a 1D tensor of parameter values in [0;1], and a 1d tensor with remaining int info (preset UID, midi note, vel).
@@ -131,7 +116,7 @@ class DexedDataset(torch.utils.data.Dataset):
         #preset_name = dexed.PresetDatabase.get_preset_name_from_file(preset_UID)  # debug purposes
         preset_params = self.get_preset_params(preset_UID)
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
-        spectrogram = (self.get_spectrogram(x_wav) - self.spectrogram_stats['mean'])/self.spectrogram_stats['std']
+        spectrogram = (self.spectrogram(x_wav) - self.spectrogram_stats['mean'])/self.spectrogram_stats['std']
         # Tuple output. Warning: torch.from_numpy does not copy values
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
@@ -183,7 +168,7 @@ class DexedDataset(torch.utils.data.Dataset):
             x_wav, Fs = self.get_wav_file(self.valid_preset_UIDs[i],
                                           self.midi_note, self.midi_velocity)
             assert Fs == 22050
-            tensor_spectrogram = self.get_spectrogram(x_wav)
+            tensor_spectrogram = self.spectrogram(x_wav)
             full_stats['UID'].append(self.valid_preset_UIDs[i])
             full_stats['min'].append(torch.min(tensor_spectrogram).item())
             full_stats['max'].append(torch.max(tensor_spectrogram).item())

@@ -13,9 +13,7 @@ def available_architectures():
 
 class SpectrogramEncoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu/logsigma2 values"""
-    def __init__(self, architecture, dim_z=128,
-                 spectrogram_input_size=(513, 433)  # STFT: fft 1024 hop 256 audio 5.0s@22.05kHz
-                 ):
+    def __init__(self, architecture, dim_z, spectrogram_input_size):
         super().__init__()
         self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and log sigma 2)
         self.architecture = architecture
