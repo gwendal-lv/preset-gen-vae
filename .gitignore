@@ -3,3 +3,5 @@
 *.pyc
 *.ipynb_checkpoints
 
+# Saved models, config, and Tensorboard run logs
+saved/*

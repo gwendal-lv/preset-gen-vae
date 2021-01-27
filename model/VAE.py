@@ -8,7 +8,7 @@ class BasicVAE(nn.Module):
     """ A standard VAE that uses some given encoder and decoder networks.
      The latent probability distribution is modeled as dim_z independent Gaussian distributions. """
 
-    def __init__(self, encoder, dim_z, decoder):  # TODO force decoder
+    def __init__(self, encoder, dim_z, decoder):
         super().__init__()
         # No size checks performed. Encoder and decoder must have been properly designed
         self.encoder = encoder
@@ -28,7 +28,10 @@ class BasicVAE(nn.Module):
         n_minibatch = self.z_mu_logsigma2.size()[0]
         mu = self.z_mu_logsigma2[:, 0, :]
         sigma = torch.exp(self.z_mu_logsigma2[:, 1, :] / 2.0)
-        # Sampling from the Qphi(z|x) probability distribution - with re-parametrization trick
-        eps = Normal(torch.zeros(n_minibatch, self.dim_z), torch.ones(n_minibatch, self.dim_z)).sample()
-        self.z_sampled = mu + eps * sigma
+        if self.training:
+            # Sampling from the Qphi(z|x) probability distribution - with re-parametrization trick
+            eps = Normal(torch.zeros(n_minibatch, self.dim_z), torch.ones(n_minibatch, self.dim_z)).sample()
+            self.z_sampled = mu + eps * sigma
+        else:  # eval mode: no random sampling
+            self.z_sampled = mu
         return self.decoder(self.z_sampled)

@@ -39,7 +39,8 @@ class SpectrogramCNN(nn.Module):
         self.architecture = architecture
 
         if self.architecture == 'wavenet_baseline':  # https://arxiv.org/abs/1704.01279
-            ''' Symmetric layer output sizes (compared to the encoder) '''
+            ''' Symmetric layer output sizes (compared to the encoder).
+            No activation and batch norm after the last up-conv '''
             self.dec_nn = nn.Sequential(layer.TConv2D(1024, 512, [1 ,1], [1 ,1], 0,
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec1'),
                                         layer.TConv2D(512, 512, [4, 4], [2, 1], 2, output_padding=[1, 0],
@@ -58,8 +59,7 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec8'),
                                         layer.TConv2D(128, 128, [5, 5], [2, 2], 2, output_padding=[0, 0],
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec9'),
-                                        layer.TConv2D(128, 1, [5, 5], [2, 2], 2,
-                                                      activation=nn.LeakyReLU(0.1), name_prefix='dec10'),
+                                        nn.ConvTranspose2d(128, 1, [5, 5], [2, 2], 2)
                                         )
 
         elif self.architecture == 'wavenet_baseline_reduced':  # Inspired from wavenet_baseline
