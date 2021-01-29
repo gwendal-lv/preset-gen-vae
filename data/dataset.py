@@ -23,7 +23,7 @@ import utils.audio
 
 
 # Global lock... Should be the same for all forked Unix processes
-dexed_vst_lock = Lock()
+dexed_vst_lock = Lock()  # Unused - pre-rendered audio (at the moment)
 
 
 class DexedDataset(torch.utils.data.Dataset):

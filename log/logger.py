@@ -63,7 +63,8 @@ class RunLogger:
             .joinpath('runs').joinpath(model_config.name)
         self._make_dirs_if_dont_exist(self.tensorboard_model_dir)
         # - - - - - Run directories and data management - - - - -
-        print("[RunLogger] Starting logging into '{}'".format(self.log_dir))
+        if self.train_config.verbosity >= 1:
+            print("[RunLogger] Starting logging into '{}'".format(self.log_dir))
         self.run_dir = self.log_dir.joinpath(model_config.run_name)  # This is the run's reference folder
         self.saved_models_dir = self.run_dir.joinpath('models')
         self.tensorboard_run_dir = self.tensorboard_model_dir.joinpath(model_config.run_name)
@@ -73,7 +74,8 @@ class RunLogger:
                 raise RuntimeError("config.py error: this new run must start from epoch 0")
             # TODO security: try to erase the corresponding tensorboard run dir
             self._make_model_run_dirs()
-            print("[RunLogger] Created '{}' directory to store config and models.".format(self.run_dir))
+            if self.train_config.verbosity >= 1:
+                print("[RunLogger] Created '{}' directory to store config and models.".format(self.run_dir))
         # If run folder already exists
         else:
             if not model_config.allow_erase_run:
@@ -119,11 +121,23 @@ class RunLogger:
         # TODO move loss to specific function called directly from train.py
         self.tensorboard.add_scalar("MSELoss/dummy", 1 / (1 + epoch*np.random.normal(1.2, 0.1)), epoch)
         # TODO save model
+        epoch_duration = self.epoch_start_datetimes[-1] - self.epoch_start_datetimes[-2]
+        cout_str = "End of epoch {} (duration: {})".format(epoch, epoch_duration)
+        if self.train_config.verbosity == 2:
+            print(cout_str)
+
+    def save_profiler_results(self, prof):
+        """ Saves (overwrites) current profiling results. """
+        # TODO Write several .txt files with different sort methods
+        with open(self.run_dir.joinpath('profiling_by_cuda_time.txt'), 'w') as f:
+            f.write(prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time_total').__str__())
+        prof.export_chrome_trace(self.run_dir.joinpath('profiling_chrome_trace.json'))
 
     def on_training_finished(self):
         # TODO write training stats
         self.tensorboard.flush()
         self.tensorboard.close()
-        print("[RunLogger] Training has finished")
+        if self.train_config.verbosity >= 1:
+            print("[RunLogger] Training has finished")
 
 
