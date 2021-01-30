@@ -118,6 +118,10 @@ class DexedDataset(torch.utils.data.Dataset):
 
         If this dataset generates audio directly from the synth, only 1 dataloader is allowed.
         A 30000 presets dataset require approx. 7 minutes to be generated on 1 CPU. """
+        # TODO on-the-fly audio generation. We should try:
+        #  - Use shell command to run a dedicated script. The script writes AUDIO_SAMPLE_TEMP_ID.wav
+        #  - wait for the file to be generated on disk (or for the command to notify... something)
+        #  - read and delete this .wav file
         midi_note = self.midi_note
         midi_velocity = self.midi_velocity
         # loading and pre-processing

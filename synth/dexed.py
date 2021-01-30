@@ -3,6 +3,8 @@ import socket
 import sys
 import os
 import pickle
+import multiprocessing
+import time
 import numpy as np
 from scipy.io import wavfile
 import sqlite3
@@ -37,19 +39,32 @@ sqlite3.register_adapter(np.ndarray, adapt_array)
 sqlite3.register_converter("NPARRAY", convert_array)
 
 
+def get_partial_presets_df(db_row_index_limits):
+    """ Returns a partial dataframe of presets from the DB, limited a tuple of row indexes
+    (first and last included).
+
+    Useful for fast DB reading, because it involves a lot of unpickling which can be parallelized. """
+    db_path = PresetDatabase._get_db_path()
+    conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+    nb_rows = db_row_index_limits[1] - db_row_index_limits[0] + 1
+    presets_df = pd.read_sql_query("SELECT * FROM preset LIMIT {} OFFSET {}"
+                                   .format(nb_rows, db_row_index_limits[0]), conn)
+    conn.close()
+    return presets_df
+
+
 class PresetDatabase:
-    def __init__(self):
-        """ Opens the SQLite DB and copies all presets internally. This uses more memory
+    def __init__(self, num_workers=None):
+        """ Opens the SQLite DB and copies all presets internally. This uses a lot of memory
         but allows easy multithreaded usage from multiple parallel dataloaders (1 db per dataloader). """
         self._db_path = self._get_db_path()
         conn = sqlite3.connect(self._db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         cur = conn.cursor()
         # We load the full presets table (full DB is usually a few dozens of megabytes)
-        self.all_presets_df = pd.read_sql_query("SELECT * FROM preset", conn)
+        self.all_presets_df = self._load_presets_df_multiprocess(conn, cur, num_workers)
         # 20 megabytes for 30 000 presets
-        self.presets_mat = [self.all_presets_df.iloc[i]['pickled_params_np_array']
-                            for i in range(len(self.all_presets_df))]
-        self.presets_mat = np.asarray(self.presets_mat, dtype=np.float32)
+        self.presets_mat = self.all_presets_df['pickled_params_np_array'].values
+        self.presets_mat = np.stack(self.presets_mat)
         # Memory save: param values are removed from the main dataframe
         self.all_presets_df.drop(columns='pickled_params_np_array', inplace=True)
         # Algorithms are also separately stored
@@ -59,6 +74,23 @@ class PresetDatabase:
         names_df = pd.read_sql_query("SELECT * FROM param ORDER BY index_param", conn)
         self._param_names = names_df['name'].to_list()
         conn.close()
+
+    def _load_presets_df_multiprocess(self, conn, cur, num_workers):
+        if num_workers is None:
+            num_workers = os.cpu_count() // 2
+        cur.execute('SELECT COUNT(1) FROM preset')
+        presets_count = cur.fetchall()[0][0]
+        num_workers = np.minimum(presets_count, num_workers)
+        # The last process might have a little more work to do
+        rows_count_by_proc = presets_count // num_workers
+        row_index_limits = list()
+        for n in range(num_workers-1):
+            row_index_limits.append([n * rows_count_by_proc, (n+1) * rows_count_by_proc - 1])
+        # Last proc takes the remaining
+        row_index_limits.append([(num_workers-1)*rows_count_by_proc, presets_count-1])
+        with multiprocessing.Pool(num_workers) as p:
+            partial_presets_dfs = p.map(get_partial_presets_df, row_index_limits)
+        return pd.concat(partial_presets_dfs)
 
     @staticmethod
     def _get_db_path():
@@ -183,8 +215,6 @@ class Dexed:
         self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
         audio_out = self.engine.get_audio_frames()
         audio = np.asarray(audio_out)
-        if np.abs(audio).max() < 0.001:  # max à -60dB
-            pass#print("Problème : preset zéro")
         if normalize:
             return audio / np.abs(audio).max()
         else:
@@ -315,32 +345,36 @@ if __name__ == "__main__":
 
     print("Machine: '{}' ({} CPUs)".format(socket.gethostname(), os.cpu_count()))
 
+    t0 = time.time()
     dexed_db = PresetDatabase()
+    print("{} (loaded in {:.1f}s)".format(dexed_db, time.time() - t0))
     names = dexed_db.get_param_names()
 
-    # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****
-    # Approx. 244Mo (yep, the SQLite DB is much lighter...)
-    dexed_db.write_all_presets_to_files()
+    if False:
+        # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****
+        # Approx. 244Mo (yep, the SQLite DB is much lighter...)
+        dexed_db.write_all_presets_to_files()
 
-    # Test de lecture des fichiers pickled - pas besoin de la DB lue en entier
-    preset_values = PresetDatabase.get_preset_params_values_from_file(0)
-    preset_name = PresetDatabase.get_preset_name_from_file(0)
-    print(preset_name)
+    if False:
+        # Test de lecture des fichiers pickled - pas besoin de la DB lue en entier
+        preset_values = PresetDatabase.get_preset_params_values_from_file(0)
+        preset_name = PresetDatabase.get_preset_name_from_file(0)
+        print(preset_name)
 
-    # Test du synth lui-même
-    dexed = Dexed()
-    print(dexed)
-    print("Plugin params: ")
-    print(dexed.engine.get_plugin_parameters_description())
+    if False:
+        # Test du synth lui-même
+        dexed = Dexed()
+        print(dexed)
+        print("Plugin params: ")
+        print(dexed.engine.get_plugin_parameters_description())
 
-    #dexed.assign_random_preset_short_release()
-    #pres = dexed.preset_db.get_preset_values(0, plugin_format=True)
-    #dexed.assign_preset_from_db(100)
-    #print(dexed.current_preset)
+        #dexed.assign_random_preset_short_release()
+        #pres = dexed.preset_db.get_preset_values(0, plugin_format=True)
+        #dexed.assign_preset_from_db(100)
+        #print(dexed.current_preset)
 
-    #dexed.render_note(57, 100, filename="Test.wav")
+        #dexed.render_note(57, 100, filename="Test.wav")
 
-    print("{} presets use algo 5".format(len(dexed_db.get_preset_indexes_for_algorithm(5))))
+        print("{} presets use algo 5".format(len(dexed_db.get_preset_indexes_for_algorithm(5))))
 
 
-    pass

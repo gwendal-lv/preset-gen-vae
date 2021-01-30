@@ -30,7 +30,7 @@ dataloader = dict()
 if config.train.profiler_args['enabled'] and config.train.profiler_args['use_cuda']:
     num_workers = 0  # CUDA PyTorch profiler does not work with a multiprocess-dataloader
 else:
-    num_workers = min(config.train.minibatch_size, os.cpu_count()//2)
+    num_workers = min(config.train.minibatch_size, os.cpu_count()*3//4)
 for dataset_type in dataset:
     dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
                                           num_workers=num_workers, pin_memory=True)
