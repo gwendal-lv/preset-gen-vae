@@ -1,4 +1,5 @@
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -7,36 +8,42 @@ from model import layer
 
 class SpectrogramDecoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu/logsigma2 values"""
-    def __init__(self, architecture, dim_z):
+    def __init__(self, architecture, dim_z, spectrogram_input_size):
         super().__init__()
+        self.spectrogram_input_size = spectrogram_input_size
         self.dim_z = dim_z  # Latent-vector size
         self.architecture = architecture
         self.cnn = SpectrogramCNN(self.architecture)
+        self.cnn_input_shape = None  # shape not including batch size
 
+        # MLP output size must to correspond to encoder MLP's input size
         if self.architecture == 'wavenet_baseline'\
            or self.architecture == 'wavenet_baseline_lighter':
-            self.mlp = nn.Linear(self.dim_z, 1024 * 2 * 4)  # Output size corresponds to the encoder
+            assert spectrogram_input_size == (513, 433)  # Big spectrogram only - TODO adapt
+            self.cnn_input_shape = (1024, 2, 4)
+            self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
         elif self.architecture == 'wavenet_baseline_shallow':
-            self.mlp = nn.Linear(self.dim_z, 1024 * 5 * 5)  # Output size corresponds to the encoder
+            assert spectrogram_input_size == (513, 433)  # Big spectrogram only - TODO adapt
+            self.cnn_input_shape = (1024, 5, 5)
+            self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
         elif self.architecture == 'flow_synth':
+            assert spectrogram_input_size == (513, 433)  # Big spectrogram only - TODO adapt
+            self.cnn_input_shape = (64, 17, 14)
             self.mlp = nn.Sequential(nn.Linear(self.dim_z, 1024), nn.ReLU(),
                                      nn.Linear(1024, 1024), nn.ReLU(),
-                                     nn.Linear(1024, 64 * 17 * 14))
+                                     nn.Linear(1024, int(np.prod(self.cnn_input_shape))))
+        elif self.architecture == 'speccnn8l1':
+            if spectrogram_input_size == (257, 347):
+                self.cnn_input_shape = (1024, 3, 4)
+                self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
+            else:
+                assert NotImplementedError()
         else:
             raise NotImplementedError("Architecture '{}' not available".format(self.architecture))
 
     def forward(self, z_sampled):
         cnn_input = self.mlp(z_sampled)
-        # Reshaping depends on the decoder
-        if self.architecture == 'wavenet_baseline'\
-           or self.architecture == 'wavenet_baseline_lighter':
-            cnn_input = cnn_input.view(-1, 1024, 2, 4)
-        elif self.architecture == 'wavenet_baseline_shallow':
-            cnn_input = cnn_input.view(-1, 1024, 5, 5)
-        elif self.architecture == 'flow_synth':
-            cnn_input = cnn_input.view(-1, 64, 17, 14)
-        else:
-            return NotImplementedError()
+        cnn_input = cnn_input.view(-1, self.cnn_input_shape[0], self.cnn_input_shape[1], self.cnn_input_shape[2])
         return self.cnn(cnn_input)
 
 
@@ -135,6 +142,27 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.ELU(), name_prefix='dec4'),
                                         layer.TConv2D(n_lay, 1, k7, [2, 2], 2,
                                                       activation=nn.ELU(), name_prefix='dec5')
+                                        )
+
+        elif self.architecture == 'speccnn8l1':
+            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            self.dec_nn = nn.Sequential(layer.TConv2D(1024, 512, [1 ,1], [1 ,1], 0,
+                                                      activation=act(act_p), name_prefix='dec1'),
+                                        layer.TConv2D(512, 256, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec2'),
+                                        layer.TConv2D(256, 128, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec3'),
+                                        layer.TConv2D(128, 64, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec4'),
+                                        layer.TConv2D(64, 32, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec5'),
+                                        layer.TConv2D(32, 16, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec6'),
+                                        layer.TConv2D(16, 8, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec7'),
+                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)
                                         )
 
         else:

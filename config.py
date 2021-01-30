@@ -14,12 +14,17 @@ class _Config(object):
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '20_testtrace'  # different hyperparams, optimizer, etc... for a given model
+model.run_name = '21_smallspec'  # different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
-model.spectrogram_size = (513, 433)  # Corresponding STFT: fft 1024 hop 256, audio 5.0s@22.05kHz
+model.note_duration = (3.0, 1.0)
+model.stft_args = (512, 256)  # fft size and hop size
+# Possible spectrogram sizes:
+# (513, 433): audio 5.0s, fft size 1024, fft hop 256
+# (257, 347): audio 4.0s, fft size 512, fft hop 256
+model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from audio/stft params
 # Latent space dimension
 model.dim_z = 256
 # Directory for saving metrics, samples, models, etc... see README.md
@@ -40,7 +45,7 @@ train.metrics = ['ReconsLoss']
 train.verbosity = 2  # 0: no console output --> 2: fully-detailed console output
 train.profiler_args = {'enabled': True, 'use_cuda': True, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
-train.profiler_full_trace = True  # If true, runs only a few batches then exits - but saves a full detailed trace
+train.profiler_full_trace = True  # If true, runs only a few batches then exits - but saves a fully detailed trace.json
 # TODO scheduler, etc....
 
 

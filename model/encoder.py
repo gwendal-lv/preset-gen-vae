@@ -13,7 +13,7 @@ def available_architectures():
             'wavenet_baseline_lighter',
             'wavenet_baseline_shallow',  # 8 layers instead of 10 - brutally reduced feature maps count
             'flow_synth',
-            'speccnn8l1'  # Custom 8-layer CNN + 1 linear arch.
+            'speccnn8l1'  # Custom 8-layer CNN + 1 linear very light architecture
             ]
 
 
@@ -121,7 +121,7 @@ class SpectrogramCNN(nn.Module):
             
             Potential issue: the dilation is extremely big for deep layers 4 and 5. Dilated kernel is applied
             mostly on zero-padded values. We should either stride-conv or 2^l dilate. Or maybe the
-             dilation is not clearly explained in the paper (larger dilation for larger images??) '''
+             dilation is not clearly explained in the paper (the dila) '''
             n_lay = 64  # 128/2 for paper's comparisons consistency. Could be larger
             self.enc_nn = nn.Sequential(layer.Conv2D(1, n_lay, [7,7], [2,2], 3, [1,1],
                                                      activation=nn.ELU(), name_prefix='enc1'),
@@ -140,17 +140,17 @@ class SpectrogramCNN(nn.Module):
             act_p = 0.1  # Activation param
             self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc1'),
-                                        layer.Conv2D(8, 16, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(8, 16, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc2'),
-                                        layer.Conv2D(16, 32, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(16, 32, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc3'),
-                                        layer.Conv2D(32, 64, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(32, 64, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc4'),
-                                        layer.Conv2D(64, 128, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(64, 128, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc5'),
-                                        layer.Conv2D(128, 256, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(128, 256, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc6'),
-                                        layer.Conv2D(256, 512, [3, 3], [2, 2], 1, [1, 1],
+                                        layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc7'),
                                         layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
                                                      activation=act(act_p), name_prefix='enc8'),

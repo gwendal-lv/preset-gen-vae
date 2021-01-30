@@ -24,7 +24,8 @@ print("PyTorch num threads = {}".format(torch.get_num_threads()))
 
 
 # ========== Datasets and DataLoaders ==========
-full_dataset = data.dataset.DexedDataset()
+full_dataset = data.dataset.DexedDataset(note_duration=config.model.note_duration,
+                                         n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1])
 # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
 dataset = utils.data.random_split(full_dataset, config.train.datasets_proportions, random_gen_seed=0)
 dataloader = dict()
@@ -41,7 +42,8 @@ for dataset_type in dataset:
 # Encoder and decoder with the same architecture
 encoder_model = encoder.SpectrogramEncoder(config.model.encoder_architecture, config.model.dim_z,
                                            config.model.spectrogram_size)
-decoder_model = decoder.SpectrogramDecoder(config.model.encoder_architecture, config.model.dim_z)
+decoder_model = decoder.SpectrogramDecoder(config.model.encoder_architecture, config.model.dim_z,
+                                           config.model.spectrogram_size)
 ae_model = VAE.BasicVAE(encoder_model, config.model.dim_z, decoder_model)
 
 
