@@ -4,19 +4,21 @@ Performs training for the configuration described in config.py
 
 import os
 from pathlib import Path
+import contextlib
 
+import mkl
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import torch.optim
-import mkl
+from torch.autograd import profiler
 
 import config
 from model import VAE, encoder, decoder
 import log.logger
 import data.dataset
 import utils.data
-from torch.autograd import profiler
+import utils.profile
 
 
 print("MKL num threads = {}".format(mkl.get_max_threads()))
@@ -70,34 +72,35 @@ optimizer = torch.optim.Adam(ae_model.parameters())
 
 
 # ========== PyTorch Profiling (optional) ==========
-if config.train.profiler_args['enabled']:
-    pass # TODO structure propre
-else:
-    raise NotImplementedError()
+is_profiled = config.train.profiler_args['enabled']
+ae_model.is_profiled = is_profiled
 
 
 # ========== Model training epochs ==========
 # TODO consider start epoch
 for epoch in range(0, config.train.n_epochs):
-    with profiler.profile(**config.train.profiler_args) as prof:
-        # TODO train all mini-batches
+    # = = = = = Train all mini-batches = = = = =
+    with utils.profile.get_optional_profiler(config.train.profiler_args) as prof:  # true no-op and prof is None if disabled
         for i, sample in enumerate(dataloader['train']):
             optimizer.zero_grad()
             x_in, params_in, midi_in = sample[0].to(device), sample[1].to(device), sample[2].to(device)
-            #x_out = ae_model(x_in)
-            x_out = ae_model.profile_forward(x_in)
-            with profiler.record_function("BACKPROP"):
+            x_out = ae_model(x_in)
+            with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                 l = loss(x_out, x_in)
                 l.backward()
-            with profiler.record_function("OPTIM_STEP"):
+            with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                 optimizer.step()  # TODO refaire propre
             print("epoch {} batch {}".format(epoch, i))
-            if i == 2:  # TODO faire vraiment ça si profile_only
+            # For full-trace profiling: we need to stop after a few mini-batches
+            if config.train.profiler_full_trace and i == 2:
                 break
-    logger.save_profiler_results(prof)
-    break  # TODO nice conditional break
-    # TODO evaluation on validation dataset
+    if prof is not None:
+        logger.save_profiler_results(prof)
+    if config.train.profiler_full_trace:
+        break  # Forced training stop
 
+    # TODO evaluation on validation dataset
+    # TODO model save
     # TODO epoch logs (epoch scalars/sounds/images + metrics update)
     logger.tensorboard.update_metrics(metrics)
     logger.on_epoch_finished(epoch, ae_model)
