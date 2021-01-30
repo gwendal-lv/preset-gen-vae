@@ -21,10 +21,6 @@ import utils.data
 import utils.profile
 
 
-print("MKL num threads = {}".format(mkl.get_max_threads()))
-print("PyTorch num threads = {}".format(torch.get_num_threads()))
-
-
 # ========== Datasets and DataLoaders ==========
 full_dataset = data.dataset.DexedDataset(note_duration=config.model.note_duration,
                                          n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1])
@@ -38,6 +34,8 @@ else:
 for dataset_type in dataset:
     dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
                                           num_workers=num_workers, pin_memory=True)
+    if config.train.verbosity >= 1:
+        print("Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}".format(dataset_type, len(dataset[dataset_type]), len(full_dataset), 100.0 * len(dataset[dataset_type])/len(full_dataset), num_workers))
 
 
 # ========== Model definition ==========
@@ -46,7 +44,32 @@ encoder_model = encoder.SpectrogramEncoder(config.model.encoder_architecture, co
                                            config.model.spectrogram_size)
 decoder_model = decoder.SpectrogramDecoder(config.model.encoder_architecture, config.model.dim_z,
                                            config.model.spectrogram_size)
-ae_model = VAE.BasicVAE(encoder_model, config.model.dim_z, decoder_model)
+ae_model = VAE.BasicVAE(encoder_model, config.model.dim_z, decoder_model)  # Not parallelized yet
+
+
+# ========== Logger init ==========
+ae_model.eval()
+logger = log.logger.RunLogger(Path(__file__).resolve().parent, config.model, config.train)
+logger.init_with_model(ae_model, config.model.input_tensor_size)  # model must not be parallel
+
+
+# ========== Training devices ==========
+if config.train.verbosity >= 1:
+    print("Intel MKL num threads = {}".format(mkl.get_max_threads()))
+    print("PyTorch num threads = {}".format(torch.get_num_threads()))
+    print("CUDA devices count: {} GPU(s)".format(torch.cuda.device_count()))
+if torch.cuda.device_count() == 0:
+    raise NotImplementedError()  # CPU training not available
+elif torch.cuda.device_count() == 1 or config.train.profiler_1_GPU:
+    if config.train.profiler_1_GPU:
+        print("Using 1/{} GPUs for code profiling".format(torch.cuda.device_count()))
+    device = 'cuda:0'
+    ae_model = ae_model.to(device)
+    ae_model_parallel = nn.DataParallel(ae_model, device_ids=[0])  # "Parallel" 1-GPU model
+else:
+    device = torch.device('cuda')
+    ae_model.to(device)
+    ae_model_parallel = nn.DataParallel(ae_model)  # We use all available GPUs
 
 
 # ========== Losses and Metrics ==========
@@ -55,18 +78,10 @@ if config.train.ae_reconstruction_loss == 'MSE':
 else:
     raise NotImplementedError()
 metrics = {'dummy_metric': 0.07}  # TODO
-
-
-# ========== Logger init ==========
-ae_model.eval()
-logger = log.logger.RunLogger(Path(__file__).resolve().parent, config.model, config.train)
-logger.init_with_model(ae_model, config.model.input_tensor_size)
 logger.tensorboard.init_hparams_and_metrics(metrics)
 
 
 # ========== Optimizer and Scheduler ==========
-device = torch.device(config.train.device)
-ae_model = ae_model.to(device)
 ae_model.train()
 optimizer = torch.optim.Adam(ae_model.parameters())
 
@@ -79,12 +94,15 @@ ae_model.is_profiled = is_profiled
 # ========== Model training epochs ==========
 # TODO consider start epoch
 for epoch in range(0, config.train.n_epochs):
-    # = = = = = Train all mini-batches = = = = =
-    with utils.profile.get_optional_profiler(config.train.profiler_args) as prof:  # true no-op and prof is None if disabled
-        for i, sample in enumerate(dataloader['train']):
+    # = = = = = Train all mini-batches (optional profiling) = = = = =
+    with utils.profile.get_optional_profiler(config.train.profiler_args) as prof:  # if disabled: true no-op and prof is None
+        dataloader_iter = iter(dataloader['train'])
+        for i in range(len(dataloader['train'])):
+            with profiler.record_function("DATA_LOAD") if is_profiled else contextlib.nullcontext():
+                sample = next(dataloader_iter)
+                x_in, params_in, midi_in = sample[0].to(device), sample[1].to(device), sample[2].to(device)
             optimizer.zero_grad()
-            x_in, params_in, midi_in = sample[0].to(device), sample[1].to(device), sample[2].to(device)
-            x_out = ae_model(x_in)
+            x_out = ae_model_parallel(x_in)
             with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                 l = loss(x_out, x_in)
                 l.backward()
@@ -99,10 +117,10 @@ for epoch in range(0, config.train.n_epochs):
     if config.train.profiler_full_trace:
         break  # Forced training stop
 
-    # TODO evaluation on validation dataset
-    # TODO model save
-    # TODO epoch logs (epoch scalars/sounds/images + metrics update)
+    # TODO = = = = = Evaluation on validation dataset = = = = =
+    # TODO  = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
     logger.tensorboard.update_metrics(metrics)
+    # TODO  = = = = = Model save - ready for next epoch = = = = =
     logger.on_epoch_finished(epoch, ae_model)
 
 

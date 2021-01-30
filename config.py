@@ -34,7 +34,6 @@ model.logs_root_dir = "saved"  # Path from this directory
 train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 192
-train.device = 'cuda:0'
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
 train.start_epoch = 0  # 0 means a restart (previous data erased by the logger)
 train.n_epochs = 2  # Total number of epochs (including previous training epochs)
@@ -43,9 +42,10 @@ train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD TODO mettre 
 train.ae_reconstruction_loss = 'MSE'
 train.metrics = ['ReconsLoss']
 train.verbosity = 2  # 0: no console output --> 2: fully-detailed console output
-train.profiler_args = {'enabled': True, 'use_cuda': True, 'record_shapes': False,
+train.profiler_args = {'enabled': True, 'use_cuda': False, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
 train.profiler_full_trace = True  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
+train.profiler_1_GPU = True  # Profiling on only 1 GPU allow a much better understanding of trace.json
 # TODO scheduler, etc....
 
 
