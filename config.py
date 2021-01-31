@@ -36,20 +36,28 @@ train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
 train.start_epoch = 0  # 0 means a restart (previous data erased by the logger)
-train.n_epochs = 3  # Total number of epochs (including previous training epochs)
+train.n_epochs = 50  # Total number of epochs (including previous training epochs)
 train.save_period = 1  # Period (in epochs) for tensorboard logs and model saves
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
 train.normalize_latent_loss = True  # Normalize the latent over z-dimension
 train.ae_reconstruction_loss = 'MSE'
 train.metrics = ['ReconsLoss', 'LatLoss']
-train.verbosity = 2  # 0: no console output --> 2: fully-detailed console output
+# TODO Learning Rate scheduler, etc....
+train.optimizer = 'Adam'
+train.initial_learning_rate = 1e-4
+train.weight_decay = 1e-6
+train.scheduler = 'ReduceLROnPlateau'
+train.scheduler_factor = 0.1
+train.scheduler_patience = 5
+train.scheduler_threshold = 1e-3
+train.verbosity = 2  # 0: no console output --> 3: fully-detailed per-batch console output
 train.profiler_args = {'enabled': False, 'use_cuda': True, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
 train.profiler_full_trace = False  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
 train.profiler_1_GPU = False  # Profiling on only 1 GPU allow a much better understanding of trace.json
 train.init_security_pause = 0.0  # Short pause before erasing an existing run
-# TODO scheduler, etc....
-
+train.logged_samples_count = 4  # Number of logged audio and spectrograms for a given epoch
+train.logged_samples_period = 10  # Epoch periods (not to store too much .wav/.png data)
 
 # Mini-batch size can be smaller for the last mini-batches and/or during evaluation
 model.input_tensor_size = (train.minibatch_size, 1, model.spectrogram_size[0], model.spectrogram_size[1])

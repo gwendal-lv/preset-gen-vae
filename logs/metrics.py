@@ -29,6 +29,18 @@ class BufferedMetric:
         return np.asarray(self.buffer).mean()
 
 
+class SimpleMetric:
+    """ A very simple class for storing a metric, which provides EpochMetric-compatible methods """
+    def __init__(self, value):
+        self.v = value
+
+    def on_new_epoch(self):
+        return None
+
+    def mean(self):
+        return self.v
+
+
 class EpochMetric:
     """ Can store mini-batch metric values in order to compute an epoch-averaged metric. """
     def __init__(self, normalized_losses=True):

@@ -137,7 +137,7 @@ class RunLogger:
         delta_t = (minibatch_end_time - self.last_minibatch_start_datetime).total_seconds()
         self.minibatch_duration_running_avg *= (1.0 - self.minibatch_duration_avg_coeff)
         self.minibatch_duration_running_avg += self.minibatch_duration_avg_coeff * delta_t
-        if self.verbosity == 2:
+        if self.verbosity >= 3:
             print("epoch {} batch {} delta t = {}ms" .format(len(self.epoch_start_datetimes)-1, minibatch_idx,
                                                              int(1000.0 * self.minibatch_duration_running_avg)))
         self.last_minibatch_start_datetime = minibatch_end_time

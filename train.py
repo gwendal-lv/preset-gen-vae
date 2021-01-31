@@ -91,8 +91,10 @@ else:
 
 
 # ========== Scalars, metrics, images and audio to be tracked in Tensorboard ==========
-epoch_losses = {'ReconsLoss/Train': logs.metrics.EpochMetric(), 'ReconsLoss/Valid': logs.metrics.EpochMetric(),
-                'LatLoss/Train': logs.metrics.EpochMetric(), 'LatLoss/Valid': logs.metrics.EpochMetric()}
+scalars = {'ReconsLoss/Train': logs.metrics.EpochMetric(), 'ReconsLoss/Valid': logs.metrics.EpochMetric(),
+           'LatLoss/Train': logs.metrics.EpochMetric(), 'LatLoss/Valid': logs.metrics.EpochMetric(),
+           'VAELoss/Train': logs.metrics.SimpleMetric(), 'VAELoss/Valid': logs.metrics.SimpleMetric(),
+           'lr': logs.metrics.SimpleMetric(config.train.initial_learning_rate)}
 # TODO learning rate scalar, ...
 # Losses here are Validation losses. Metrics need an '_' to be different from scalars (tensorboard mixes them)
 metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
@@ -104,7 +106,17 @@ logger.tensorboard.init_hparams_and_metrics(metrics)
 
 # ========== Optimizer and Scheduler ==========
 ae_model.train()
-optimizer = torch.optim.Adam(ae_model.parameters())
+if config.train.optimizer == 'Adam':
+    optimizer = torch.optim.Adam(ae_model.parameters(), lr=config.train.initial_learning_rate,
+                                 weight_decay=config.train.weight_decay)
+else:
+    raise NotImplementedError()
+if config.train.scheduler == 'ReduceLROnPlateau':
+    scheduler = torch.optim.lr_scheduler.\
+        ReduceLROnPlateau(optimizer, factor=config.train.scheduler_factor, patience=config.train.scheduler_patience,
+                          threshold=config.train.scheduler_threshold, verbose=(config.train.verbosity >= 2))
+else:
+    raise NotImplementedError()
 
 
 # ========== PyTorch Profiling (optional) ==========
@@ -116,8 +128,8 @@ ae_model.is_profiled = is_profiled
 # TODO consider re-start epoch
 for epoch in range(0, config.train.n_epochs):
     # = = = = = Re-init of epoch metrics = = = = =
-    for _, l in epoch_losses.items():
-        l.on_new_epoch()
+    for _, s in scalars.items():
+        s.on_new_epoch()
 
     # = = = = = Train all mini-batches (optional profiling) = = = = =
     # when profiling is disabled: true no-op context manager, and prof is None
@@ -127,17 +139,17 @@ for epoch in range(0, config.train.n_epochs):
         for i in range(len(dataloader['train'])):
             with profiler.record_function("DATA_LOAD") if is_profiled else contextlib.nullcontext():
                 sample = next(dataloader_iter)
-                x_in, params_in, midi_in = sample[0].to(device), sample[1].to(device), sample[2].to(device)
+                x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
             optimizer.zero_grad()
             z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
             with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                 recons_loss = reconstruction_criterion(x_out, x_in)
-                epoch_losses['ReconsLoss/Train'].append(recons_loss)
+                scalars['ReconsLoss/Train'].append(recons_loss)
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
-                epoch_losses['LatLoss/Train'].append(lat_loss)
+                scalars['LatLoss/Train'].append(lat_loss)
                 (recons_loss + lat_loss).backward()
             with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
-                optimizer.step()  # TODO refaire propre
+                optimizer.step()  # Internal params. update; before scheduler step
             logger.on_minibatch_finished(i)
             # For full-trace profiling: we need to stop after a few mini-batches
             if config.train.profiler_full_trace and i == 2:
@@ -147,26 +159,32 @@ for epoch in range(0, config.train.n_epochs):
     if config.train.profiler_full_trace:
         break  # Forced training stop
 
-    # TODO = = = = = Evaluation on validation dataset = = = = =
+    # = = = = = Evaluation on validation dataset (no profiling) = = = = =
     with torch.no_grad():
         ae_model_parallel.eval()  # BN stops running estimates
         for i, sample in enumerate(dataloader['validation']):
-            # TODO
-            epoch_losses['ReconsLoss/Valid'].append(-10.0 * epoch)
-            epoch_losses['LatLoss/Valid'].append(-10.0 * epoch)
+            x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
+            z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
+            recons_loss = reconstruction_criterion(x_out, x_in)
+            scalars['ReconsLoss/Valid'].append(recons_loss)
+            lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
+            scalars['LatLoss/Valid'].append(lat_loss)
+            # TODO tensorboard save samples for minibatch eval [0]
+    # Dynamic LR scheduling depends on validation performance
+    scheduler.step(scalars['ReconsLoss/Valid'].mean() + scalars['LatLoss/Valid'].mean())
+    scalars['lr'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
 
-    # TODO  = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
-    # TODO all scalars
-    for k, l in epoch_losses.items():
-        logger.tensorboard.add_scalar(k, l.mean(), epoch)
+    # = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
+    for k, s in scalars.items():  # All available scalars are written to tensorboard
+        logger.tensorboard.add_scalar(k, s.mean(), epoch)
     # TODO metrics...
     metrics['epochs'] = epoch + 1
-    metrics['ReconsLoss/Valid_'].append(epoch_losses['ReconsLoss/Valid'].mean())
-    metrics['LatLoss/Valid_'].append(epoch_losses['LatLoss/Valid'].mean())
+    metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].mean())
+    metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].mean())
     logger.tensorboard.update_metrics(metrics)
     # TODO Spectrograms
 
-    # TODO  = = = = = Model save - ready for next epoch = = = = =
+    # TODO  = = = = = Model+optimizer+scheduler save - ready for next epoch = = = = =
     logger.on_epoch_finished(epoch, ae_model)  # TODO
 
 
