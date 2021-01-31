@@ -5,6 +5,8 @@ Audio utils (spectrograms, G&L phase reconstruction, ...)
 import torch
 import torch.fft
 
+import warnings
+
 
 class Spectrogram:
     """ Class for spectrogram computation from a raw audio waveform. The min spectrogram
@@ -19,9 +21,11 @@ class Spectrogram:
         self.spectrogram_norm_factor = torch.fft.rfft(self.window).abs().max().item()
 
     def __call__(self, x_wav):
+        warnings.filterwarnings("ignore", category=UserWarning)
         spectrogram = torch.stft(torch.tensor(x_wav, dtype=torch.float32), n_fft=self.n_fft, hop_length=self.fft_hop,
                                  window=self.window, center=True,
                                  pad_mode='constant', onesided=True, return_complex=True).abs()
+        warnings.filterwarnings("default", category=UserWarning)
         # normalization of spectrogram module vs. Hann window weight ; min ; dynamic dB range
         spectrogram = spectrogram / self.spectrogram_norm_factor
         spectrogram = torch.maximum(spectrogram,

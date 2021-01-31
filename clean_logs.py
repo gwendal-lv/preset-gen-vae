@@ -13,9 +13,9 @@ Useful to fully-clean Tensorboard logs:
 from pathlib import Path
 
 import config
-import log.logger
+import logs.logger
 
 
 if __name__ == "__main__":
-    log.logger.erase_run_data(Path(__file__).resolve().parent, config.model)
+    logs.logger.erase_run_data(Path(__file__).resolve().parent, config.model)
 

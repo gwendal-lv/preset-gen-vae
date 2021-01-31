@@ -8,11 +8,12 @@ import datetime
 import numpy as np
 import torch
 
+import humanize
 import torchinfo
 
 from .tbwriter import TensorboardSummaryWriter  # Custom modified summary writer
 
-_erase_security_time_s = 2
+_erase_security_time_s = 2.0
 
 
 def get_model_run_directory(root_path, model_config):
@@ -24,7 +25,7 @@ def get_model_run_directory(root_path, model_config):
 
 def get_tensorboard_run_directory(root_path, model_config):
     """ Returns the directory where Tensorboard model metrics are stored, for a particular run. """
-    # TODO gérer pb s'il y en a plusieurs... (pb semble résolu avec màj PyTorch)
+    # pb s'il y en a plusieurs ? (semble résolu avec override de add_hparam PyTorch)
     return root_path.joinpath(model_config.logs_root_dir).joinpath('runs')\
         .joinpath(model_config.name).joinpath(model_config.run_name)
 
@@ -32,10 +33,13 @@ def get_tensorboard_run_directory(root_path, model_config):
 def erase_run_data(root_path, model_config):
     """ Erases all previous data (Tensorboard, config, saved models)
     for a particular run of the model. """
-    print("[RunLogger] *** WARNING *** '{}' run for model '{}' will be erased in {} seconds. "
-          "Stop this program to cancel ***"
-          .format(model_config.run_name, model_config.name, _erase_security_time_s))
-    time.sleep(_erase_security_time_s)
+    if _erase_security_time_s > 0.1:
+        print("[RunLogger] *** WARNING *** '{}' run for model '{}' will be erased in {} seconds. "
+              "Stop this program to cancel ***"
+              .format(model_config.run_name, model_config.name, _erase_security_time_s))
+        time.sleep(_erase_security_time_s)
+    else:
+        print("[RunLogger] '{}' run for model '{}' will be erased.".format(model_config.run_name, model_config.name))
     shutil.rmtree(get_model_run_directory(root_path, model_config))  # config and saved models
     shutil.rmtree(get_tensorboard_run_directory(root_path, model_config))  # tensorboard
 
@@ -48,14 +52,22 @@ class RunLogger:
 
      See ../README.md to get more info on storage location.
 
-     TODO does not create a new run if training re-starts from epoch > 0
-     TODO prompt alert if a previous run data is to be overwritten
-     TODO deletion of previous run data - if needed
+     TODO do not create a new run if training re-starts from epoch > 0
      """
-    def __init__(self, root_path, model_config, train_config):
+    def __init__(self, root_path, model_config, train_config, minibatches_count=0):
+        """
+
+        :param root_path: pathlib.Path of the project's root folder
+        :param model_config: from config.py
+        :param train_config: from config.py
+        :param minibatches_count: Length of the 'train' dataloader
+        """
         # Configs are stored but not modified by this class
         self.model_config = model_config
         self.train_config = train_config
+        self.verbosity = train_config.verbosity
+        global _erase_security_time_s  # Very dirty.... but quick
+        _erase_security_time_s = train_config.init_security_pause
         # - - - - - Directories creation (if not exists) for model (not yet for a given run) - - - - -
         self.log_dir = root_path.joinpath(model_config.logs_root_dir).joinpath(model_config.name)
         self._make_dirs_if_dont_exist(self.log_dir)
@@ -72,7 +84,6 @@ class RunLogger:
         if not os.path.exists(self.run_dir):
             if train_config.start_epoch != 0:
                 raise RuntimeError("config.py error: this new run must start from epoch 0")
-            # TODO security: try to erase the corresponding tensorboard run dir
             self._make_model_run_dirs()
             if self.train_config.verbosity >= 1:
                 print("[RunLogger] Created '{}' directory to store config and models.".format(self.run_dir))
@@ -91,8 +102,12 @@ class RunLogger:
         config_dict = {'model': model_config.__dict__, 'train': train_config.__dict__}
         with open(self.run_dir.joinpath('config.json'), 'w') as f:
             json.dump(config_dict, f)
-        # Various logged data
-        self.epoch_start_datetimes = [datetime.datetime.now()]
+        # - - - - - Epochs, Batches, ... - - - - -
+        self.minibatches_count = minibatches_count
+        self.minibatch_duration_running_avg = 0.0
+        self.minibatch_duration_avg_coeff = 0.05  # auto-regressive running average coefficient
+        self.last_minibatch_start_datetime = datetime.datetime.now()
+        self.epoch_start_datetimes = [datetime.datetime.now()]  # This value can be erased in init_with_model
         # - - - - - Tensorboard - - - - -
         self.tensorboard = TensorboardSummaryWriter(log_dir=self.tensorboard_run_dir, flush_secs=5,
                                                     model_config=model_config, train_config=train_config)
@@ -114,24 +129,43 @@ class RunLogger:
         with open(self.run_dir.joinpath('torchinfo_summary.txt'), 'w') as f:
             f.write(description.__str__())
         self.tensorboard.add_graph(model, torch.zeros(input_tensor_size))
+        self.epoch_start_datetimes = [datetime.datetime.now()]
+
+    def on_minibatch_finished(self, minibatch_idx):
+        # TODO time stats - running average
+        minibatch_end_time = datetime.datetime.now()
+        delta_t = (minibatch_end_time - self.last_minibatch_start_datetime).total_seconds()
+        self.minibatch_duration_running_avg *= (1.0 - self.minibatch_duration_avg_coeff)
+        self.minibatch_duration_running_avg += self.minibatch_duration_avg_coeff * delta_t
+        if self.verbosity == 2:
+            print("epoch {} batch {} delta t = {}ms" .format(len(self.epoch_start_datetimes)-1, minibatch_idx,
+                                                             int(1000.0 * self.minibatch_duration_running_avg)))
+        self.last_minibatch_start_datetime = minibatch_end_time
 
     def on_epoch_finished(self, epoch, model_to_save):
         # TODO add args and implement...
         self.epoch_start_datetimes.append(datetime.datetime.now())
-        # TODO move loss to specific function called directly from train.py
-        self.tensorboard.add_scalar("MSELoss/dummy", 1 / (1 + epoch*np.random.normal(1.2, 0.1)), epoch)
         # TODO save model
         epoch_duration = self.epoch_start_datetimes[-1] - self.epoch_start_datetimes[-2]
-        cout_str = "End of epoch {} (duration: {})".format(epoch, epoch_duration)
-        if self.train_config.verbosity == 2:
-            print(cout_str)
+        avg_duration_s = np.asarray([(self.epoch_start_datetimes[i+1] - self.epoch_start_datetimes[i]).total_seconds()
+                                     for i in range(len(self.epoch_start_datetimes) - 1)])
+        avg_duration_s = avg_duration_s.mean()
+        remaining_datetime = avg_duration_s * (self.train_config.n_epochs - (epoch-self.train_config.start_epoch) - 1)
+        remaining_datetime = datetime.timedelta(seconds=int(remaining_datetime))
+        if self.verbosity >= 1:
+            print("End of epoch {} ({}/{}). Duration={:.1f}s, avg={:.1f}s. Estimated remaining time: {} ({})"
+                  .format(epoch, epoch-self.train_config.start_epoch+1, self.train_config.n_epochs,
+                          epoch_duration.total_seconds(), avg_duration_s,
+                          remaining_datetime, humanize.naturaldelta(remaining_datetime)))
 
-    def save_profiler_results(self, prof):
-        """ Saves (overwrites) current profiling results. """
+    def save_profiler_results(self, prof, save_full_trace=False):
+        """ Saves (overwrites) current profiling results.
+        Warning: do not save full trace for long learning (approx. 10MB per **mini_batch**) """
         # TODO Write several .txt files with different sort methods
         with open(self.run_dir.joinpath('profiling_by_cuda_time.txt'), 'w') as f:
             f.write(prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time_total').__str__())
-        prof.export_chrome_trace(self.run_dir.joinpath('profiling_chrome_trace.json'))
+        if save_full_trace:
+            prof.export_chrome_trace(self.run_dir.joinpath('profiling_chrome_trace.json'))
 
     def on_training_finished(self):
         # TODO write training stats

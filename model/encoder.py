@@ -18,10 +18,10 @@ def available_architectures():
 
 
 class SpectrogramEncoder(nn.Module):
-    """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu/logsigma2 values"""
+    """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu and logs(var) values"""
     def __init__(self, architecture, dim_z, spectrogram_input_size):
         super().__init__()
-        self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and log sigma 2)
+        self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and logs sigma 2)
         self.architecture = architecture
         self.cnn = SpectrogramCNN(self.architecture)
         # Automatic CNN output tensor size inference
@@ -44,9 +44,9 @@ class SpectrogramEncoder(nn.Module):
         n_minibatch = x_spectrogram.size()[0]
         cnn_out = self.cnn(x_spectrogram).view(n_minibatch, -1)  # 2nd dim automatically inferred
         # print("Forward CNN out size = {}".format(cnn_out.size()))
-        z_mu_logsigma2 = self.mlp(cnn_out)
-        # Last dim contains a latent proba distribution value, last-1 dim is 2 (to retrieve mu or log sigma2)
-        return torch.reshape(z_mu_logsigma2, (n_minibatch, 2, self.dim_z))
+        z_mu_logvar = self.mlp(cnn_out)
+        # Last dim contains a latent proba distribution value, last-1 dim is 2 (to retrieve mu or logs sigma2)
+        return torch.reshape(z_mu_logvar, (n_minibatch, 2, self.dim_z))
 
 
 class SpectrogramCNN(nn.Module):

@@ -14,7 +14,7 @@ class _Config(object):
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '21_smallspec'  # different hyperparams, optimizer, etc... for a given model
+model.run_name = '00_metricstests'  # different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
@@ -33,19 +33,21 @@ model.logs_root_dir = "saved"  # Path from this directory
 
 train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
-train.minibatch_size = 192
+train.minibatch_size = 256
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
 train.start_epoch = 0  # 0 means a restart (previous data erased by the logger)
-train.n_epochs = 2  # Total number of epochs (including previous training epochs)
+train.n_epochs = 3  # Total number of epochs (including previous training epochs)
 train.save_period = 1  # Period (in epochs) for tensorboard logs and model saves
-train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD TODO mettre direct dans un classe de Loss
+train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
+train.normalize_latent_loss = True  # Normalize the latent over z-dimension
 train.ae_reconstruction_loss = 'MSE'
-train.metrics = ['ReconsLoss']
+train.metrics = ['ReconsLoss', 'LatLoss']
 train.verbosity = 2  # 0: no console output --> 2: fully-detailed console output
-train.profiler_args = {'enabled': True, 'use_cuda': False, 'record_shapes': False,
+train.profiler_args = {'enabled': False, 'use_cuda': True, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
-train.profiler_full_trace = True  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
-train.profiler_1_GPU = True  # Profiling on only 1 GPU allow a much better understanding of trace.json
+train.profiler_full_trace = False  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
+train.profiler_1_GPU = False  # Profiling on only 1 GPU allow a much better understanding of trace.json
+train.init_security_pause = 0.0  # Short pause before erasing an existing run
 # TODO scheduler, etc....
 
 

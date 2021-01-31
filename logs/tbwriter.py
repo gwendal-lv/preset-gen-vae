@@ -3,6 +3,8 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.tensorboard.summary import hparams
 
+from .metrics import BufferedMetric
+
 
 class CorrectedSummaryWriter(SummaryWriter):
     """ SummaryWriter corrected to prevent extra runs to be created
@@ -11,7 +13,9 @@ class CorrectedSummaryWriter(SummaryWriter):
     Original code in torch/utils/tensorboard.writer.py,
     modification by method overloading inspired by https://github.com/pytorch/pytorch/issues/32651 """
 
-    def add_hparams(self, hparam_dict, metric_dict, hparam_domain_discrete=None):
+    def add_hparams(self, hparam_dict, metric_dict, hparam_domain_discrete=None, run_name=None):
+        assert run_name is None  # Disabled feature. Run name init by summary writer ctor
+
         torch._C._log_api_usage_once("tensorboard.logging.add_hparams")
         if type(hparam_dict) is not dict or type(metric_dict) is not dict:
             raise TypeError('hparam_dict and metric_dict should be dictionary.')
@@ -40,15 +44,34 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params = dict()
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
-        # TODO latent loss in hparams
+        # TODO all loss types in hparams
+        self.hyper_params['lat_loss'] = self.train_config.latent_loss
+        self.hyper_params['rec_loss'] = self.train_config.ae_reconstruction_loss
         # TODO hparam domain discrete
 
     def init_hparams_and_metrics(self, metrics):
         """ Hparams and Metric initialization.
-        Hparams will be definitely set but metrics can be updated during training """
+        Hparams will be definitely set but metrics can be updated during training.
+
+        :param metrics: Dict of BufferedMetric
+        """
         # Some processing on hparams can be done here... none at the moment
         self.update_metrics(metrics)
 
     def update_metrics(self, metrics):
-        self.add_hparams(self.hyper_params, metrics, hparam_domain_discrete=None)
+        """ Updates Tensorboard metrics
+
+        :param metrics: Dict of values and/or BufferedMetric instances
+        :return: None
+        """
+        metrics_dict = dict()
+        for k, v in metrics.items():
+            if isinstance(metrics[k], BufferedMetric):
+                try:
+                    metrics_dict[k] = v.mean()
+                except ValueError:
+                    metrics_dict[k] = 0  # TODO appropriate default metric value?
+            else:
+                metrics_dict[k] = v
+        self.add_hparams(self.hyper_params, metrics_dict, hparam_domain_discrete=None)
 

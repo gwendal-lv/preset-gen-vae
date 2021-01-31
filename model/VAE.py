@@ -23,14 +23,14 @@ class BasicVAE(nn.Module):
         """ Encodes the given input into a Qphi(z|x) probability distribution,
         samples a latent vector from that distribution, and finally calls the decoder network.
 
-        :returns: A tuple TODO
+        :returns: A tuple (z_mu_logvar, z_sampled, x_out)
         """
         with profiler.record_function("ENCODING") if self.is_profiled else contextlib.nullcontext():
             # TODO changer ça - ça doit devenir une sortie pour être OK avec DataParallel
-            z_mu_logsigma2 = self.encoder(x)
-            n_minibatch = z_mu_logsigma2.size()[0]
-            mu = z_mu_logsigma2[:, 0, :]
-            sigma = torch.exp(z_mu_logsigma2[:, 1, :] / 2.0)
+            z_mu_logvar = self.encoder(x)
+            n_minibatch = z_mu_logvar.size()[0]
+            mu = z_mu_logvar[:, 0, :]
+            sigma = torch.exp(z_mu_logvar[:, 1, :] / 2.0)
         with profiler.record_function("LATENT_SAMPLING") if self.is_profiled else contextlib.nullcontext():
             if self.training:
                 # Sampling from the Qphi(z|x) probability distribution - with re-parametrization trick
@@ -41,5 +41,5 @@ class BasicVAE(nn.Module):
                 z_sampled = mu
         with profiler.record_function("DECODING") if self.is_profiled else contextlib.nullcontext():
             x_out = self.decoder(z_sampled)
-        return x_out
+        return z_mu_logvar, z_sampled, x_out
 
