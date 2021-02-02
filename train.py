@@ -19,9 +19,11 @@ from model import VAE, encoder, decoder
 import model.loss
 import logs.logger
 import logs.metrics
+from logs.metrics import SimpleMetric, EpochMetric
 import data.dataset
 import utils.data
 import utils.profile
+from utils.hparams import LinearDynamicParam
 
 
 # ========== Datasets and DataLoaders ==========
@@ -91,15 +93,18 @@ else:
 
 
 # ========== Scalars, metrics, images and audio to be tracked in Tensorboard ==========
-scalars = {'ReconsLoss/Train': logs.metrics.EpochMetric(), 'ReconsLoss/Valid': logs.metrics.EpochMetric(),
-           'LatLoss/Train': logs.metrics.EpochMetric(), 'LatLoss/Valid': logs.metrics.EpochMetric(),
-           'VAELoss/Train': logs.metrics.SimpleMetric(), 'VAELoss/Valid': logs.metrics.SimpleMetric(),
-           'lr': logs.metrics.SimpleMetric(config.train.initial_learning_rate)}
+scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
+           'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
+           'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
+           'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
+           'Sched/beta': LinearDynamicParam(config.train.beta*0.1, config.train.beta,
+                                            end_epoch=config.train.beta_warmup_epochs,
+                                            current_epoch=config.train.start_epoch)}
 # TODO learning rate scalar, ...
 # Losses here are Validation losses. Metrics need an '_' to be different from scalars (tensorboard mixes them)
 metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
            'LatLoss/Valid_': logs.metrics.BufferedMetric(),
-           'epochs': 0}
+           'epochs': config.train.start_epoch}
 # TODO check metrics as required in config.py
 logger.tensorboard.init_hparams_and_metrics(metrics)
 
@@ -111,9 +116,10 @@ if config.train.optimizer == 'Adam':
                                  weight_decay=config.train.weight_decay)
 else:
     raise NotImplementedError()
-if config.train.scheduler == 'ReduceLROnPlateau':
+# TODO reload previous state
+if config.train.scheduler_name == 'ReduceLROnPlateau':
     scheduler = torch.optim.lr_scheduler.\
-        ReduceLROnPlateau(optimizer, factor=config.train.scheduler_factor, patience=config.train.scheduler_patience,
+        ReduceLROnPlateau(optimizer, factor=config.train.scheduler_lr_factor, patience=config.train.scheduler_patience,
                           threshold=config.train.scheduler_threshold, verbose=(config.train.verbosity >= 2))
 else:
     raise NotImplementedError()
@@ -146,6 +152,7 @@ for epoch in range(0, config.train.n_epochs):
                 recons_loss = reconstruction_criterion(x_out, x_in)
                 scalars['ReconsLoss/Train'].append(recons_loss)
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
+                lat_loss *= scalars['Sched/beta'].get(epoch)
                 scalars['LatLoss/Train'].append(lat_loss)
                 (recons_loss + lat_loss).backward()
             with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
@@ -158,6 +165,7 @@ for epoch in range(0, config.train.n_epochs):
         logger.save_profiler_results(prof, config.train.profiler_full_trace)
     if config.train.profiler_full_trace:
         break  # Forced training stop
+    scalars['VAELoss/Train'] = SimpleMetric(scalars['ReconsLoss/Train'].get() + scalars['LatLoss/Train'].get())
 
     # = = = = = Evaluation on validation dataset (no profiling) = = = = =
     with torch.no_grad():
@@ -168,19 +176,21 @@ for epoch in range(0, config.train.n_epochs):
             recons_loss = reconstruction_criterion(x_out, x_in)
             scalars['ReconsLoss/Valid'].append(recons_loss)
             lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
+            lat_loss *= scalars['Sched/beta'].get(epoch)
             scalars['LatLoss/Valid'].append(lat_loss)
             # TODO tensorboard save samples for minibatch eval [0]
     # Dynamic LR scheduling depends on validation performance
-    scheduler.step(scalars['ReconsLoss/Valid'].mean() + scalars['LatLoss/Valid'].mean())
-    scalars['lr'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
+    scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
+    scheduler.step(scalars['VAELoss/Valid'].value)
+    scalars['Sched/LR'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
 
     # = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
     for k, s in scalars.items():  # All available scalars are written to tensorboard
-        logger.tensorboard.add_scalar(k, s.mean(), epoch)
+        logger.tensorboard.add_scalar(k, s.get(), epoch)
     # TODO metrics...
     metrics['epochs'] = epoch + 1
-    metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].mean())
-    metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].mean())
+    metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
+    metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
     logger.tensorboard.update_metrics(metrics)
     # TODO Spectrograms
 

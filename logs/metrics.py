@@ -31,14 +31,17 @@ class BufferedMetric:
 
 class SimpleMetric:
     """ A very simple class for storing a metric, which provides EpochMetric-compatible methods """
-    def __init__(self, value):
-        self.v = value
+    def __init__(self, value=0.0):
+        if isinstance(value, torch.Tensor):
+            self.value = value.item()
+        else:
+            self.value = value
 
     def on_new_epoch(self):
         return None
 
-    def mean(self):
-        return self.v
+    def get(self):
+        return self.value
 
 
 class EpochMetric:
@@ -61,9 +64,10 @@ class EpochMetric:
             self.buffer.append(value.item())
         else:
             self.buffer.append(value)
-            # TODO tester ça
 
-    def mean(self):
+    def get(self):
+        """ Returns the mean of values stored since last call to on_new_epoch() """
         if len(self.buffer) == 0:
             raise ValueError()
         return np.asarray(self.buffer).mean()
+
