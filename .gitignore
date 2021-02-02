@@ -5,3 +5,8 @@
 
 # Saved models, config, and Tensorboard run logs
 saved/*
+
+# symlinks to renderman
+librenderman.so
+synth/librenderman.so
+
