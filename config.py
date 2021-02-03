@@ -14,7 +14,7 @@ class _Config(object):
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '05_test_spec'  # different hyperparams, optimizer, etc... for a given model
+model.run_name = '00_restart'  # different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
@@ -47,6 +47,7 @@ train.optimizer = 'Adam'
 train.initial_learning_rate = 3e-4
 train.weight_decay = 1e-6  # Dynamic weight decay?
 train.beta = 1.0  # Regularization factor for the latent loss
+train.beta_start_value = 0.2
 train.beta_warmup_epochs = 20  # Epochs of warmup increase from 0.0 to beta
 
 train.scheduler_name = 'ReduceLROnPlateau'
@@ -62,6 +63,7 @@ train.profiler_args = {'enabled': False, 'use_cuda': True, 'record_shapes': Fals
                        'profile_memory': False, 'with_stack': False}
 train.profiler_full_trace = False  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
 train.profiler_1_GPU = False  # Profiling on only 1 GPU allow a much better understanding of trace.json
+
 
 # Mini-batch size can be smaller for the last mini-batches and/or during evaluation
 model.input_tensor_size = (train.minibatch_size, 1, model.spectrogram_size[0], model.spectrogram_size[1])

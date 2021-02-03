@@ -24,6 +24,7 @@ import data.dataset
 import utils.data
 import utils.profile
 from utils.hparams import LinearDynamicParam
+import utils.figures
 
 
 # ========== Datasets and DataLoaders ==========
@@ -97,7 +98,7 @@ scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
            'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
            'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
            'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
-           'Sched/beta': LinearDynamicParam(config.train.beta*0.1, config.train.beta,
+           'Sched/beta': LinearDynamicParam(config.train.beta_start_value, config.train.beta,
                                             end_epoch=config.train.beta_warmup_epochs,
                                             current_epoch=config.train.start_epoch)}
 # TODO learning rate scalar, ...
@@ -106,7 +107,7 @@ metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
            'LatLoss/Valid_': logs.metrics.BufferedMetric(),
            'epochs': config.train.start_epoch}
 # TODO check metrics as required in config.py
-logger.tensorboard.init_hparams_and_metrics(metrics)
+logger.tensorboard.init_hparams_and_metrics(metrics)  # hparams added knowing config.*
 
 
 # ========== Optimizer and Scheduler ==========
@@ -136,6 +137,7 @@ for epoch in range(0, config.train.n_epochs):
     # = = = = = Re-init of epoch metrics = = = = =
     for _, s in scalars.items():
         s.on_new_epoch()
+    # TODO log_samples ou pas
 
     # = = = = = Train all mini-batches (optional profiling) = = = = =
     # when profiling is disabled: true no-op context manager, and prof is None
@@ -179,6 +181,10 @@ for epoch in range(0, config.train.n_epochs):
             lat_loss *= scalars['Sched/beta'].get(epoch)
             scalars['LatLoss/Valid'].append(lat_loss)
             # TODO tensorboard save samples for minibatch eval [0]
+            # TODO Faire propre !
+            if i == 0:
+                fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True)
+                logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
     # Dynamic LR scheduling depends on validation performance
     scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
     scheduler.step(scalars['VAELoss/Valid'].value)

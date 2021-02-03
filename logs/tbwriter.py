@@ -44,6 +44,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params = dict()
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
+        self.hyper_params['wdecay'] = self.train_config.weight_decay
         # TODO all loss types in hparams
         self.hyper_params['lat_loss'] = self.train_config.latent_loss
         self.hyper_params['rec_loss'] = self.train_config.ae_reconstruction_loss
