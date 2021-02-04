@@ -4,11 +4,15 @@ import time
 import shutil
 import json
 import datetime
+import pathlib
 
 import numpy as np
 import torch
 
 import humanize
+
+import torch
+
 import torchinfo
 
 from .tbwriter import TensorboardSummaryWriter  # Custom modified summary writer
@@ -21,6 +25,22 @@ def get_model_run_directory(root_path, model_config):
     Does not check whether the directory exists or not (it must have been created by the RunLogger) """
     return root_path.joinpath(model_config.logs_root_dir)\
         .joinpath(model_config.name).joinpath(model_config.run_name)
+
+
+def get_model_checkpoint(root_path: pathlib.Path, model_config, epoch):
+    """ Returns the path to a .tar saved checkpoint, or prints all available checkpoints and raises an exception
+    if the required epoch has no saved .tar checkpoint. """
+    checkpoints_dir = root_path.joinpath(model_config.logs_root_dir).joinpath(model_config.name)\
+        .joinpath(model_config.run_name).joinpath('checkpoints')
+    checkpoint_path = checkpoints_dir.joinpath('{:05d}.tar'.format(epoch))
+    try:
+        checkpoint = torch.load(checkpoint_path)
+        print(checkpoint_path)
+    except (OSError, IOError) as e:
+        available_checkpoints = "Available checkpoints: {}".format([f.name for f in checkpoints_dir.glob('*.tar')])
+        print(available_checkpoints)
+        raise ValueError("Cannot load checkpoint for epoch {}: {}".format(epoch, e))
+    return checkpoint
 
 
 def get_tensorboard_run_directory(root_path, model_config):
@@ -51,8 +71,6 @@ class RunLogger:
      - trained models
 
      See ../README.md to get more info on storage location.
-
-     TODO do not create a new run if training re-starts from epoch > 0
      """
     def __init__(self, root_path, model_config, train_config, minibatches_count=0):
         """
@@ -68,7 +86,9 @@ class RunLogger:
         self.verbosity = train_config.verbosity
         global _erase_security_time_s  # Very dirty.... but quick
         _erase_security_time_s = train_config.init_security_pause
-        # - - - - - Directories creation (if not exists) for model (not yet for a given run) - - - - -
+        assert train_config.start_epoch >= 0  # Cannot start from a negative epoch
+        self.restart_from_checkpoint = (train_config.start_epoch > 0)
+        # - - - - - Directories creation (if not exists) for model - - - - -
         self.log_dir = root_path.joinpath(model_config.logs_root_dir).joinpath(model_config.name)
         self._make_dirs_if_dont_exist(self.log_dir)
         self.tensorboard_model_dir = root_path.joinpath(model_config.logs_root_dir)\
@@ -78,7 +98,7 @@ class RunLogger:
         if self.train_config.verbosity >= 1:
             print("[RunLogger] Starting logging into '{}'".format(self.log_dir))
         self.run_dir = self.log_dir.joinpath(model_config.run_name)  # This is the run's reference folder
-        self.saved_models_dir = self.run_dir.joinpath('models')
+        self.checkpoints_dir = self.run_dir.joinpath('checkpoints')
         self.tensorboard_run_dir = self.tensorboard_model_dir.joinpath(model_config.run_name)
         # Check: does the run folder already exist?
         if not os.path.exists(self.run_dir):
@@ -89,19 +109,17 @@ class RunLogger:
                 print("[RunLogger] Created '{}' directory to store config and models.".format(self.run_dir))
         # If run folder already exists
         else:
-            if not model_config.allow_erase_run:
-                raise RuntimeError("Config does not allow to erase the '{}' run for model '{}'"
-                                   .format(model_config.run_name, model_config.name))
-            else:
-                if train_config.start_epoch == 0:  # Start a new fresh training
+            if self.restart_from_checkpoint:
+                if self.verbosity >= 1:
+                    print("[RunLogger] Will load saved checkpoint (previous epoch: {})"
+                          .format(self.train_config.start_epoch - 1))
+            else:  # Start a new fresh training
+                if not model_config.allow_erase_run:
+                    raise RuntimeError("Config does not allow to erase the '{}' run for model '{}'"
+                                       .format(model_config.run_name, model_config.name))
+                else:
                     erase_run_data(root_path, model_config)  # module function
                     self._make_model_run_dirs()
-                else:
-                    raise NotImplementedError("Must load a previous training epoch: not implemented")
-        # Write config file on startup only - any previous config file will be erased
-        config_dict = {'model': model_config.__dict__, 'train': train_config.__dict__}
-        with open(self.run_dir.joinpath('config.json'), 'w') as f:
-            json.dump(config_dict, f)
         # - - - - - Epochs, Batches, ... - - - - -
         self.minibatches_count = minibatches_count
         self.minibatch_duration_running_avg = 0.0
@@ -120,16 +138,28 @@ class RunLogger:
     def _make_model_run_dirs(self):
         """ Creates (no check) the directories for storing config and saved models. """
         os.makedirs(self.run_dir)
-        os.makedirs(self.saved_models_dir)
+        os.makedirs(self.checkpoints_dir)
 
     def init_with_model(self, model, input_tensor_size):
-        """ Finishes to initialize this logger given the fully-build model """
+        """ Finishes to initialize this logger given the fully-build model. This function must be called
+         after all checks (configuration consistency, etc...) have been performed, because it overwrites files. """
+        # Write config file on startup only - any previous config file will be erased
+        # New/Saved configs compatibility must have been checked before calling this function
+        config_dict = {'model': self.model_config.__dict__, 'train': self.train_config.__dict__}
+        with open(self.run_dir.joinpath('config.json'), 'w') as f:
+            json.dump(config_dict, f)
         # TODO consider several models
-        description = torchinfo.summary(model, input_size=input_tensor_size, depth=5, device='cpu', verbose=0)
-        with open(self.run_dir.joinpath('torchinfo_summary.txt'), 'w') as f:
-            f.write(description.__str__())
-        self.tensorboard.add_graph(model, torch.zeros(input_tensor_size))
+        if not self.restart_from_checkpoint:  # Graphs written at epoch 0 only
+            description = torchinfo.summary(model, input_size=input_tensor_size, depth=5, device='cpu', verbose=0)
+            with open(self.run_dir.joinpath('torchinfo_summary.txt'), 'w') as f:
+                f.write(description.__str__())
+            self.tensorboard.add_graph(model, torch.zeros(input_tensor_size))
         self.epoch_start_datetimes = [datetime.datetime.now()]
+
+    def get_previous_config_from_json(self):
+        with open(self.run_dir.joinpath('config.json'), 'r') as f:
+            full_config = json.load(f)
+        return full_config
 
     def on_minibatch_finished(self, minibatch_idx):
         # TODO time stats - running average
@@ -142,22 +172,6 @@ class RunLogger:
                                                              int(1000.0 * self.minibatch_duration_running_avg)))
         self.last_minibatch_start_datetime = minibatch_end_time
 
-    def on_epoch_finished(self, epoch, model_to_save):
-        # TODO add args and implement...
-        self.epoch_start_datetimes.append(datetime.datetime.now())
-        # TODO save model
-        epoch_duration = self.epoch_start_datetimes[-1] - self.epoch_start_datetimes[-2]
-        avg_duration_s = np.asarray([(self.epoch_start_datetimes[i+1] - self.epoch_start_datetimes[i]).total_seconds()
-                                     for i in range(len(self.epoch_start_datetimes) - 1)])
-        avg_duration_s = avg_duration_s.mean()
-        remaining_datetime = avg_duration_s * (self.train_config.n_epochs - (epoch-self.train_config.start_epoch) - 1)
-        remaining_datetime = datetime.timedelta(seconds=int(remaining_datetime))
-        if self.verbosity >= 1:
-            print("End of epoch {} ({}/{}). Duration={:.1f}s, avg={:.1f}s. Estimated remaining time: {} ({})"
-                  .format(epoch, epoch-self.train_config.start_epoch+1, self.train_config.n_epochs,
-                          epoch_duration.total_seconds(), avg_duration_s,
-                          remaining_datetime, humanize.naturaldelta(remaining_datetime)))
-
     def save_profiler_results(self, prof, save_full_trace=False):
         """ Saves (overwrites) current profiling results.
         Warning: do not save full trace for long learning (approx. 10MB per **mini_batch**) """
@@ -166,6 +180,26 @@ class RunLogger:
             f.write(prof.key_averages(group_by_stack_n=5).table(sort_by='cuda_time_total').__str__())
         if save_full_trace:
             prof.export_chrome_trace(self.run_dir.joinpath('profiling_chrome_trace.json'))
+
+    def save_checkpoint(self, epoch, ae_model, optimizer, scheduler):
+        torch.save({'epoch': epoch, 'ae_model_state_dict': ae_model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(), 'scheduler_state_dict': scheduler.state_dict()},
+                   self.checkpoints_dir.joinpath('{:05d}.tar'.format(epoch)))
+
+    def on_epoch_finished(self, epoch):
+        self.epoch_start_datetimes.append(datetime.datetime.now())
+        epoch_duration = self.epoch_start_datetimes[-1] - self.epoch_start_datetimes[-2]
+        avg_duration_s = np.asarray([(self.epoch_start_datetimes[i+1] - self.epoch_start_datetimes[i]).total_seconds()
+                                     for i in range(len(self.epoch_start_datetimes) - 1)])
+        avg_duration_s = avg_duration_s.mean()
+        run_total_epochs = self.train_config.n_epochs - self.train_config.start_epoch
+        remaining_datetime = avg_duration_s * (run_total_epochs - (epoch-self.train_config.start_epoch) - 1)
+        remaining_datetime = datetime.timedelta(seconds=int(remaining_datetime))
+        if self.verbosity >= 1:
+            print("End of epoch {} ({}/{}). Duration={:.1f}s, avg={:.1f}s. Estimated remaining time: {} ({})"
+                  .format(epoch, epoch-self.train_config.start_epoch+1, run_total_epochs,
+                          epoch_duration.total_seconds(), avg_duration_s,
+                          remaining_datetime, humanize.naturaldelta(remaining_datetime)))
 
     def on_training_finished(self):
         # TODO write training stats

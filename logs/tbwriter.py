@@ -41,6 +41,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         # Full-Config is required. Default constructor values allow to keep the same first constructor args
         self.model_config = model_config
         self.train_config = train_config
+        self.restart_from_checkpoint = (train_config.start_epoch > 0)
         self.hyper_params = dict()
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
@@ -51,13 +52,14 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         # TODO hparam domain discrete
 
     def init_hparams_and_metrics(self, metrics):
-        """ Hparams and Metric initialization.
+        """ Hparams and Metric initialization. Will pass if training resumes from saved checkpoint.
         Hparams will be definitely set but metrics can be updated during training.
 
         :param metrics: Dict of BufferedMetric
         """
-        # Some processing on hparams can be done here... none at the moment
-        self.update_metrics(metrics)
+        if not self.restart_from_checkpoint:  # tensorboard init at epoch 0 only
+            # Some processing on hparams can be done here... none at the moment
+            self.update_metrics(metrics)
 
     def update_metrics(self, metrics):
         """ Updates Tensorboard metrics

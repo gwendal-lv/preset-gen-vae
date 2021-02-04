@@ -14,8 +14,8 @@ class _Config(object):
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '00_restart'  # different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
+model.run_name = '03_testsave'  # run: different hyperparams, optimizer, etc... for a given model
+model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
@@ -26,7 +26,7 @@ model.stft_args = (512, 256)  # fft size and hop size
 # (257, 347): audio 4.0s, fft size 512, fft hop 256
 model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from audio/stft params
 # Latent space dimension
-model.dim_z = 256
+model.dim_z = 256 #trololo
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -35,8 +35,8 @@ train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.start_epoch = 0  # 0 means a restart (previous data erased). >0: will load start_epoch-1 model
-train.n_epochs = 150  # Total number of epochs (including previous training epochs)
+train.start_epoch = 10  # 0 means a restart (previous data erased). >0: will load start_epoch-1 saved model
+train.n_epochs = 13  # Total number of epochs (including previous training epochs)
 train.save_period = 1  # Period (in epochs) for tensorboard logs and model saves
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
 train.normalize_latent_loss = True  # Normalize the latent over z-dimension
@@ -45,7 +45,7 @@ train.metrics = ['ReconsLoss', 'LatLoss']
 
 train.optimizer = 'Adam'
 train.initial_learning_rate = 3e-4
-train.weight_decay = 1e-6  # Dynamic weight decay?
+train.weight_decay = 1e-5  # Dynamic weight decay?
 train.beta = 1.0  # Regularization factor for the latent loss
 train.beta_start_value = 0.2
 train.beta_warmup_epochs = 20  # Epochs of warmup increase from 0.0 to beta

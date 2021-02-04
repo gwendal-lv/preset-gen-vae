@@ -15,8 +15,8 @@ import torch.optim
 from torch.autograd import profiler
 
 import config
-from model import VAE, encoder, decoder
 import model.loss
+import model.build
 import logs.logger
 import logs.metrics
 from logs.metrics import SimpleMetric, EpochMetric
@@ -25,6 +25,18 @@ import utils.data
 import utils.profile
 from utils.hparams import LinearDynamicParam
 import utils.figures
+
+
+# ========== Logger init (required to load from checkpoint) and Config check ==========
+root_path = Path(__file__).resolve().parent
+logger = logs.logger.RunLogger(root_path, config.model, config.train)
+if logger.restart_from_checkpoint:
+    model.build.check_configs_on_resume_from_checkpoint(config.model, config.train,
+                                                        logger.get_previous_config_from_json())
+if config.train.start_epoch > 0:  # Resume from checkpoint?
+    start_checkpoint = logs.logger.get_model_checkpoint(root_path, config.model, config.train.start_epoch - 1)
+else:
+    start_checkpoint = None
 
 
 # ========== Datasets and DataLoaders ==========
@@ -50,17 +62,10 @@ for dataset_type in dataset:
 
 
 # ========== Model definition ==========
-# Encoder and decoder with the same architecture
-encoder_model = encoder.SpectrogramEncoder(config.model.encoder_architecture, config.model.dim_z,
-                                           config.model.spectrogram_size)
-decoder_model = decoder.SpectrogramDecoder(config.model.encoder_architecture, config.model.dim_z,
-                                           config.model.spectrogram_size)
-ae_model = VAE.BasicVAE(encoder_model, config.model.dim_z, decoder_model)  # Not parallelized yet
-
-
-# ========== Logger init ==========
+_, _, ae_model = model.build.build_ae_model(config.model)
+if start_checkpoint is not None:
+    ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
 ae_model.eval()
-logger = logs.logger.RunLogger(Path(__file__).resolve().parent, config.model, config.train)
 logger.init_with_model(ae_model, config.model.input_tensor_size)  # model must not be parallel
 
 
@@ -101,7 +106,6 @@ scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
            'Sched/beta': LinearDynamicParam(config.train.beta_start_value, config.train.beta,
                                             end_epoch=config.train.beta_warmup_epochs,
                                             current_epoch=config.train.start_epoch)}
-# TODO learning rate scalar, ...
 # Losses here are Validation losses. Metrics need an '_' to be different from scalars (tensorboard mixes them)
 metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
            'LatLoss/Valid_': logs.metrics.BufferedMetric(),
@@ -117,13 +121,15 @@ if config.train.optimizer == 'Adam':
                                  weight_decay=config.train.weight_decay)
 else:
     raise NotImplementedError()
-# TODO reload previous state
 if config.train.scheduler_name == 'ReduceLROnPlateau':
     scheduler = torch.optim.lr_scheduler.\
         ReduceLROnPlateau(optimizer, factor=config.train.scheduler_lr_factor, patience=config.train.scheduler_patience,
                           threshold=config.train.scheduler_threshold, verbose=(config.train.verbosity >= 2))
 else:
     raise NotImplementedError()
+if start_checkpoint is not None:
+    optimizer.load_state_dict(start_checkpoint['optimizer_state_dict'])
+    scheduler.load_state_dict(start_checkpoint['scheduler_state_dict'])
 
 
 # ========== PyTorch Profiling (optional) ==========
@@ -132,8 +138,7 @@ ae_model.is_profiled = is_profiled
 
 
 # ========== Model training epochs ==========
-# TODO consider re-start epoch
-for epoch in range(0, config.train.n_epochs):
+for epoch in range(config.train.start_epoch, config.train.n_epochs):
     # = = = = = Re-init of epoch metrics = = = = =
     for _, s in scalars.items():
         s.on_new_epoch()
@@ -183,7 +188,8 @@ for epoch in range(0, config.train.n_epochs):
             # TODO tensorboard save samples for minibatch eval [0]
             # TODO Faire propre !
             if i == 0:
-                fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True)
+                fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
+                                                         max_nb_specs=config.train.logged_samples_count)
                 logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
     # Dynamic LR scheduling depends on validation performance
     scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
@@ -193,15 +199,15 @@ for epoch in range(0, config.train.n_epochs):
     # = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
     for k, s in scalars.items():  # All available scalars are written to tensorboard
         logger.tensorboard.add_scalar(k, s.get(), epoch)
-    # TODO metrics...
     metrics['epochs'] = epoch + 1
     metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
     metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
     logger.tensorboard.update_metrics(metrics)
-    # TODO Spectrograms
 
-    # TODO  = = = = = Model+optimizer+scheduler save - ready for next epoch = = = = =
-    logger.on_epoch_finished(epoch, ae_model)  # TODO
+    # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =
+    # TODO save period > 1
+    logger.save_checkpoint(epoch, ae_model, optimizer, scheduler)
+    logger.on_epoch_finished(epoch)
 
 
 # ========== Logger final stats ==========
