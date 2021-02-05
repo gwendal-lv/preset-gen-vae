@@ -35,12 +35,21 @@ def get_model_checkpoint(root_path: pathlib.Path, model_config, epoch):
     checkpoint_path = checkpoints_dir.joinpath('{:05d}.tar'.format(epoch))
     try:
         checkpoint = torch.load(checkpoint_path)
-        print(checkpoint_path)
     except (OSError, IOError) as e:
         available_checkpoints = "Available checkpoints: {}".format([f.name for f in checkpoints_dir.glob('*.tar')])
         print(available_checkpoints)
         raise ValueError("Cannot load checkpoint for epoch {}: {}".format(epoch, e))
     return checkpoint
+
+
+def get_model_last_checkpoint(root_path: pathlib.Path, model_config, verbose=True):
+    checkpoints_dir = root_path.joinpath(model_config.logs_root_dir).joinpath(model_config.name)\
+        .joinpath(model_config.run_name).joinpath('checkpoints')
+    available_epochs = [int(f.stem) for f in checkpoints_dir.glob('*.tar')]
+    assert len(available_epochs) > 0  # At least 1 checkpoint should be available
+    if verbose:
+        print("Loading epoch {} from {}".format(max(available_epochs), checkpoints_dir))
+    return get_model_checkpoint(root_path, model_config, max(available_epochs))
 
 
 def get_tensorboard_run_directory(root_path, model_config):

@@ -44,11 +44,13 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.restart_from_checkpoint = (train_config.start_epoch > 0)
         self.hyper_params = dict()
         self.hyper_params['z_dim'] = self.model_config.dim_z
+        self.hyper_params['encarch'] = self.model_config.encoder_architecture
+        self.hyper_params['mels'] = self.model_config.mel_bins
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
         self.hyper_params['wdecay'] = self.train_config.weight_decay
         # TODO all loss types in hparams
-        self.hyper_params['lat_loss'] = self.train_config.latent_loss
-        self.hyper_params['rec_loss'] = self.train_config.ae_reconstruction_loss
+        self.hyper_params['latloss'] = self.train_config.latent_loss
+        self.hyper_params['recloss'] = self.train_config.ae_reconstruction_loss
         # TODO hparam domain discrete
 
     def init_hparams_and_metrics(self, metrics):

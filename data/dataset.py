@@ -16,6 +16,7 @@ import soundfile
 import numpy as np
 import copy
 import sys
+import librosa
 
 from synth import dexed
 import utils.audio
@@ -85,9 +86,13 @@ class DexedDataset(torch.utils.data.Dataset):
                 .iloc[valid_presets_row_indexes]['index_preset'].values
         # DB class deleted (we need a low memory usage for multi-process dataloaders)
         del dexed_db
-        # - - - Spectrogram
-        self.spectrogram = utils.audio.Spectrogram(self.n_fft, self.fft_hop,
-                                                   spectrogram_min_dB, spectrogram_dynamic_range_dB)
+        # - - - Spectrogram utility class
+        if self.n_mel_bins <= 0:
+            self.spectrogram = utils.audio.Spectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB,
+                                                       spectrogram_dynamic_range_dB)
+        else:  # TODO do not hardcode Fs?
+            self.spectrogram = utils.audio.MelSpectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB,
+                                                          spectrogram_dynamic_range_dB, self.n_mel_bins, 22050)
         # try load spectrogram min/max/mean/std statistics
         try:
             f = open(self._get_spectrogram_stats_file(), 'r')
@@ -123,15 +128,20 @@ class DexedDataset(torch.utils.data.Dataset):
         midi_velocity = self.midi_velocity
         # loading and pre-processing
         preset_UID = self.valid_preset_UIDs[i]
-        #preset_name = dexed.PresetDatabase.get_preset_name_from_file(preset_UID)  # debug purposes
         preset_params = self.get_preset_params(preset_UID)
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
+        # Spectrogram, or Mel-Spectrogram if requested
         spectrogram = (self.spectrogram(x_wav) - self.spectrogram_stats['mean'])/self.spectrogram_stats['std']
         # Tuple output. Warning: torch.from_numpy does not copy values
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
             torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
             torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32)
+
+    def denormalize_spectrogram(self, spectrogram):
+        return spectrogram * self.spectrogram_stats['std'] + self.spectrogram_stats['mean']
+
+    # TODO un-mel method
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
         """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate. """
@@ -160,13 +170,19 @@ class DexedDataset(torch.utils.data.Dataset):
     def _get_spectrogram_stats_folder():
         return pathlib.Path(__file__).parent.joinpath('stats')
 
+    def _get_spectrogram_stats_file_stem(self):
+        stem = 'DexedDataset_spectrogram_nfft{:04d}hop{:04d}mels'.format(self.n_fft, self.fft_hop)
+        if self.n_mel_bins <= 0:
+            stem += 'None'
+        else:
+            stem += '{:04d}'.format(self.n_mel_bins)
+        return stem
+
     def _get_spectrogram_stats_file(self):
-        return self._get_spectrogram_stats_folder().joinpath(
-            'DexedDataset_spectrogram_nfft{:04d}hop{:04d}.json'.format(self.n_fft, self.fft_hop))
+        return self._get_spectrogram_stats_folder().joinpath(self._get_spectrogram_stats_file_stem() + '.json')
 
     def _get_spectrogram_full_stats_file(self):
-        return self._get_spectrogram_stats_folder().joinpath(
-            'DexedDataset_spectrogram_nfft{:04d}hop{:04d}_full.csv'.format(self.n_fft, self.fft_hop))
+        return self._get_spectrogram_stats_folder().joinpath(self._get_spectrogram_stats_file_stem() + '_full.csv')
 
     def compute_and_store_spectrograms_stats(self):
         """ Compute min,max,mean,std on all presets previously rendered as wav files.
@@ -204,6 +220,7 @@ class DexedDataset(torch.utils.data.Dataset):
         full_stats.to_csv(self._get_spectrogram_full_stats_file())
         with open(self._get_spectrogram_stats_file(), 'w') as f:
             json.dump(dataset_stats, f)
+        print("Results written to {} _full.csv and .json files".format(self._get_spectrogram_stats_file_stem()))
 
     @staticmethod
     def get_wav_file_path(preset_UID, midi_note, midi_velocity):
@@ -214,6 +231,9 @@ class DexedDataset(torch.utils.data.Dataset):
     @staticmethod
     def get_wav_file(preset_UID, midi_note, midi_velocity):
         return soundfile.read(DexedDataset.get_wav_file_path(preset_UID, midi_note, midi_velocity))
+
+    def _get_wav_file(self, preset_UID):
+        return self.get_wav_file(preset_UID, self.midi_note, self.midi_velocity)
 
     def generate_wav_files(self):
         """ Reads all presets from .pickle and .txt files
@@ -236,22 +256,26 @@ class DexedDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
 
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav_and_spec_stats = False
+    regenerate_wav = False
+    regenerate_spectrograms_stats = True
+
     import sys
     sys.path.append(pathlib.Path(__file__).parent.parent)
     import config  # Dirty path trick to import config.py
 
     dexed_dataset = DexedDataset(note_duration=config.model.note_duration,
-                                 n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1])
+                                 n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
+                                 n_mel_bins=config.model.mel_bins)
     print(dexed_dataset)
-    if regenerate_wav_and_spec_stats:
-        # WRITE ALL WAV FILES (approx. 13Go for 5.0s audio)
-        dexed_dataset.generate_wav_files()
-        # whole-dataset stats (for proper normalization)
-        dexed_dataset.compute_and_store_spectrograms_stats()
-
     spec, _, _ = dexed_dataset[0]
     print("Spectrogram size: {}".format(torch.squeeze(spec).size()))
+
+    if regenerate_wav:
+        # WRITE ALL WAV FILES (approx. 13Go for 5.0s audio)
+        dexed_dataset.generate_wav_files()
+    if regenerate_spectrograms_stats:
+        # whole-dataset stats (for proper normalization)
+        dexed_dataset.compute_and_store_spectrograms_stats()
     # ============== DATA RE-GENERATION - FROM config.py ==================
 
 

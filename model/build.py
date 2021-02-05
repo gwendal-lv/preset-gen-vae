@@ -45,7 +45,7 @@ def check_configs_on_resume_from_checkpoint(new_model_config, new_train_config, 
     # Model config check
     prev_config = config_json_checkpoint['model']
     attributes_to_check = ['name', 'run_name', 'encoder_architecture', 'dim_z', 'logs_root_dir',
-                           'note_duration', 'stft_args', 'spectrogram_size']
+                           'note_duration', 'stft_args', 'spectrogram_size', 'mel_bins']
     for attr in attributes_to_check:
         if not _is_attr_equal(prev_config[attr], new_model_config.__dict__[attr]):
             raise ValueError("Model attribute '{}' is different in the new config.py ({}) and the old config.json ({})"
