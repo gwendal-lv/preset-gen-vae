@@ -49,7 +49,7 @@ def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info
             if row == 0 and UID is not None:
                 axes[row][i].set(title="{}".format(UID))
             librosa.display.specshow(spectrogram, shading='flat', ax=axes[row][i],
-                                     cmap=('inferno' if row < 2 else 'bwr'),
+                                     cmap=('magma' if row < 2 else 'bwr'),
                                      vmin=(-error_magnitude if row ==2 else None),
                                      vmax=(error_magnitude if row == 2 else None))
 

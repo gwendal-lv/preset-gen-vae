@@ -188,7 +188,9 @@ class Dexed:
     def __init__(self, plugin_path="/home/gwendal/Jupyter/AudioPlugins/Dexed.so",
                  midi_note_duration_s=4.0, render_duration_s=5.0,
                  sample_rate=22050,  # librosa default sr
-                 buffer_size=512, fft_size=512):
+                 buffer_size=512, fft_size=512,
+                 fadeout_duration_s=0.1):
+        self.fadeout_duration_s = fadeout_duration_s  # To reduce STFT discontinuities with long-release presets
         self.midi_note_duration_s = midi_note_duration_s
         self.render_duration_s = render_duration_s
 
@@ -215,6 +217,10 @@ class Dexed:
         self.engine.render_patch(midi_note, midi_velocity, self.midi_note_duration_s, self.render_duration_s)
         audio_out = self.engine.get_audio_frames()
         audio = np.asarray(audio_out)
+        fadeout_len = int(np.floor(self.Fs * self.fadeout_duration_s))
+        if fadeout_len > 1:  # fadeout might be disabled if too short
+            fadeout = np.linspace(1.0, 0.0, fadeout_len)
+            audio[-fadeout_len:] = audio[-fadeout_len:] * fadeout
         if normalize:
             return audio / np.abs(audio).max()
         else:

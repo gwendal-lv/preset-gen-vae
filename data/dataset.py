@@ -256,8 +256,8 @@ class DexedDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
 
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = False
-    regenerate_spectrograms_stats = True
+    regenerate_wav = True  # quite long (15min)
+    regenerate_spectrograms_stats = True  # approx 3 min
 
     import sys
     sys.path.append(pathlib.Path(__file__).parent.parent)

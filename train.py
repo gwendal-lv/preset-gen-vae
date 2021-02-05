@@ -54,7 +54,8 @@ elif sys.gettrace() is not None:
     print("Debugger detected - num_workers=0 for all DataLoaders")
     num_workers = 0  # PyCharm debug behaves badly with multiprocessing...
 else:  # We should use an higher CPU count for real-time audio rendering
-    num_workers = min(config.train.minibatch_size, torch.cuda.device_count() * 4)  # Optimal w/ light dataloader
+    # 4*GPU count: optimal w/ light dataloader (e.g. (mel-)spectrogram computation)
+    num_workers = min(config.train.minibatch_size, torch.cuda.device_count() * 4)
 for dataset_type in dataset:
     dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
                                           num_workers=num_workers, pin_memory=True)
@@ -139,6 +140,7 @@ ae_model.is_profiled = is_profiled
 
 
 # ========== Model training epochs ==========
+early_stop = False  # Early stop on final loss plateau
 for epoch in range(config.train.start_epoch, config.train.n_epochs):
     # = = = = = Re-init of epoch metrics = = = = =
     for _, s in scalars.items():
@@ -196,6 +198,7 @@ for epoch in range(config.train.start_epoch, config.train.n_epochs):
     scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
     scheduler.step(scalars['VAELoss/Valid'].value)
     scalars['Sched/LR'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
+    early_stop = (optimizer.param_groups[0]['lr'] < config.train.early_stop_lr_threshold)  # Early stop?
 
     # = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
     for k, s in scalars.items():  # All available scalars are written to tensorboard
@@ -206,9 +209,12 @@ for epoch in range(config.train.start_epoch, config.train.n_epochs):
     logger.tensorboard.update_metrics(metrics)
 
     # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =
-    if (epoch % config.train.save_period == 0) or (epoch == config.train.n_epochs-1):
+    if (epoch % config.train.save_period == 0) or (epoch == config.train.n_epochs-1) or early_stop:
         logger.save_checkpoint(epoch, ae_model, optimizer, scheduler)
     logger.on_epoch_finished(epoch)
+    if early_stop:
+        print("Training stopped early (loss final plateau)")
+        break
 
 
 # ========== Logger final stats ==========
