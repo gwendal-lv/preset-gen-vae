@@ -14,8 +14,8 @@ class _Config(object):
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '01_fadeout'  # run: different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
+model.run_name = '03_temptest'  # run: different hyperparams, optimizer, etc... for a given model
+model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
@@ -36,8 +36,8 @@ train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 saved model
-train.n_epochs = 200  # Total number of epochs (including previous training epochs)
+train.start_epoch = 2  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
+train.n_epochs = 3  # Total number of epochs (including previous training epochs)
 train.save_period = 10  # Period (in epochs) for tensorboard logs and model saves
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
 train.normalize_latent_loss = True  # Normalize the latent over z-dimension
@@ -53,7 +53,7 @@ train.beta_warmup_epochs = 20  # Epochs of warmup increase from 0.0 to beta
 
 train.scheduler_name = 'ReduceLROnPlateau'
 train.scheduler_lr_factor = 0.2
-train.scheduler_patience = 5
+train.scheduler_patience = 10
 train.scheduler_threshold = 1e-3
 train.early_stop_lr_threshold = 1e-7
 

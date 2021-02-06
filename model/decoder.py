@@ -27,12 +27,14 @@ class SpectrogramDecoder(nn.Module):
             self.cnn_input_shape = (1024, 5, 5)
             self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
         elif self.architecture == 'flow_synth':
-            assert spectrogram_input_size == (513, 433)  # Big spectrogram only - TODO adapt
-            self.cnn_input_shape = (64, 17, 14)
+            if spectrogram_input_size == (513, 433):
+                self.cnn_input_shape = (64, 17, 14)
+            elif spectrogram_input_size == (257, 347):
+                self.cnn_input_shape = (64, 3, 6)
             self.mlp = nn.Sequential(nn.Linear(self.dim_z, 1024), nn.ReLU(),
                                      nn.Linear(1024, 1024), nn.ReLU(),
                                      nn.Linear(1024, int(np.prod(self.cnn_input_shape))))
-        elif self.architecture == 'speccnn8l1':
+        elif 'speccnn8l1' in self.architecture:
             if spectrogram_input_size == (257, 347):
                 self.cnn_input_shape = (1024, 3, 4)
                 self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
@@ -128,7 +130,7 @@ class SpectrogramCNN(nn.Module):
                                         nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)
                                         )
 
-        elif self.architecture == 'flow_synth':  # https://acids-ircam.github.io/flow_synthesizer/#models-details
+        elif self.architecture == 'flow_synth':  # TODO ??? GB (RAM) ; ??? GMultAdd (batch 256) (inc. linear layers)
             ''' This decoder is as GPU-heavy as wavenet_baseline '''
             n_lay = 64  # 128/2 for paper's comparisons consistency. Could be larger
             k7 = [7, 7]  # Kernel of size 7
@@ -144,7 +146,7 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.ELU(), name_prefix='dec5')
                                         )
 
-        elif self.architecture == 'speccnn8l1':
+        elif self.architecture == 'speccnn8l1':  # 1.8 GB (RAM) ; 0.36 GMultAdd  (batch 256)
             ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
@@ -163,6 +165,26 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(16, 8, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
                                         nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)
+                                        )
+
+        elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 2.4 GMultAdd  (batch 256)
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            self.dec_nn = nn.Sequential(layer.TConv2D(1024, 512, [1, 1], [1, 1], 0,
+                                                      activation=act(act_p), name_prefix='dec1'),
+                                        layer.TConv2D(512, 256, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec2'),
+                                        layer.TConv2D(256, 256, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec3'),
+                                        layer.TConv2D(256, 128, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec4'),
+                                        layer.TConv2D(128, 128, [4, 4], [2, 2], 2, output_padding=[1, 1],
+                                                      activation=act(act_p), name_prefix='dec5'),
+                                        layer.TConv2D(128, 64, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec6'),
+                                        layer.TConv2D(64, 32, [4, 4], [2, 2], 2, output_padding=[1, 0],
+                                                      activation=act(act_p), name_prefix='dec7'),
+                                        nn.ConvTranspose2d(32, 1, [5, 5], [2, 2], 2)
                                         )
 
         else:

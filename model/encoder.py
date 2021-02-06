@@ -13,7 +13,8 @@ def available_architectures():
             'wavenet_baseline_lighter',
             'wavenet_baseline_shallow',  # 8 layers instead of 10 - brutally reduced feature maps count
             'flow_synth',
-            'speccnn8l1'  # Custom 8-layer CNN + 1 linear very light architecture
+            'speccnn8l1',  # Custom 8-layer CNN + 1 linear very light architecture
+            'speccnn8l1_2',  # More channels per layer
             ]
 
 
@@ -31,7 +32,7 @@ class SpectrogramEncoder(nn.Module):
         # MLP for extracting proper latent vector
         cnn_out_items = self.cnn_out_size[1] * self.cnn_out_size[2] * self.cnn_out_size[3]
         if 'wavenet_baseline' in self.architecture\
-                or self.architecture == 'speccnn8l1':
+                or 'speccnn8l1' in self.architecture:
             self.mlp = nn.Linear(cnn_out_items, 2 * self.dim_z)  # (not an MLP...) much is done in the CNN
         elif self.architecture == 'flow_synth':
             self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 1024), nn.ReLU(),
@@ -93,7 +94,8 @@ class SpectrogramCNN(nn.Module):
                                                      activation=nn.LeakyReLU(0.1), name_prefix='enc10'),
                                         )
 
-        elif self.architecture == 'wavenet_baseline_shallow':  # Inspired from wavenet_baseline
+        elif self.architecture == 'wavenet_baseline_shallow':
+            """ Inspired from wavenet_baseline, minus the two last layer, with less channels """
             self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1],
                                                      activation=nn.LeakyReLU(0.1), name_prefix='enc1'),
                                         layer.Conv2D(8, 16, [4, 4], [2, 2], 2, [1, 1],
@@ -112,29 +114,29 @@ class SpectrogramCNN(nn.Module):
                                                      activation=nn.LeakyReLU(0.1), name_prefix='enc8'),
                                         )
 
-        elif self.architecture == 'flow_synth':  # https://acids-ircam.github.io/flow_synthesizer/#models-details
-            ''' Based on strided convolutions and dilation to quickly enlarge the receptive field.
+        elif self.architecture == 'flow_synth':  # 7.7 GB (RAM), 1.4 GMultAdd (batch 256) (inc. linear layers)
+            ''' https://acids-ircam.github.io/flow_synthesizer/#models-details
+            Based on strided convolutions and dilation to quickly enlarge the receptive field.
             Paper says: "5 layers with 128 channels of strided dilated 2-D convolutions with kernel
             size 7, stride 2 and an exponential dilation factor of 2l (starting at l=0) with batch
             normalization and ELU activation."
-            The padding is 3 * 2^l (not detailed in the paper).
             
-            Potential issue: the dilation is extremely big for deep layers 4 and 5. Dilated kernel is applied
-            mostly on zero-padded values. We should either stride-conv or 2^l dilate. Or maybe the
-             dilation is not clearly explained in the paper (the dila) '''
+            Potential issue: this dilation is extremely big for deep layers 4 and 5. Dilated kernel is applied
+            mostly on zero-padded values. We should either stride-conv or 2^l dilate? Or maybe the
+             dilation is not clearly explained in the paper '''
             n_lay = 64  # 128/2 for paper's comparisons consistency. Could be larger
             self.enc_nn = nn.Sequential(layer.Conv2D(1, n_lay, [7,7], [2,2], 3, [1,1],
                                                      activation=nn.ELU(), name_prefix='enc1'),
-                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 6, [2, 2],
+                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 3, [2, 2],
                                                      activation=nn.ELU(), name_prefix='enc2'),
-                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 12, [4, 4],
+                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 3, [2, 2],
                                                      activation=nn.ELU(), name_prefix='enc3'),
-                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 24, [8, 8],
+                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 3, [2, 2],
                                                      activation=nn.ELU(), name_prefix='enc4'),
-                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 48, [16, 16],
+                                        layer.Conv2D(n_lay, n_lay, [7, 7], [2, 2], 3, [2, 2],
                                                      activation=nn.ELU(), name_prefix='enc5'))
 
-        elif self.architecture == 'speccnn8l1':
+        elif self.architecture == 'speccnn8l1':  # 1.7 GB (RAM) ; 0.12 GMultAdd  (batch 256)
             ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
@@ -155,7 +157,26 @@ class SpectrogramCNN(nn.Module):
                                         layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
                                                      activation=act(act_p), name_prefix='enc8'),
                                         )
-
+        elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            self.enc_nn = nn.Sequential(layer.Conv2D(1, 32, [5, 5], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc1'),
+                                        layer.Conv2D(32, 64, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc2'),
+                                        layer.Conv2D(64, 128, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc3'),
+                                        layer.Conv2D(128, 128, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc4'),
+                                        layer.Conv2D(128, 256, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc5'),
+                                        layer.Conv2D(256, 256, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc6'),
+                                        layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc7'),
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc8'),
+                                        )
         else:
             raise NotImplementedError("Architecture '{}' not available".format(self.architecture))
 
