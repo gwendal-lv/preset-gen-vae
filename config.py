@@ -2,19 +2,19 @@
 Allows easy modification of all configuration parameters required to define,
 train or evaluate a model.
 This script is not intended to be run, it only describes parameters.
+
+This configuration is used when running train.py as main.
+When running train_queue.py, configuration changes are relative to this config.py file.
 """
 
 
 import datetime
-
-
-class _Config(object):
-    pass
+from utils.config import _Config
 
 
 model = _Config()
 model.name = "BasicVAE"
-model.run_name = '03_temptest'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '04_autoqueue'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1'
@@ -36,8 +36,8 @@ train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
 train.datasets_proportions = [0.8, 0.1, 0.1]  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.start_epoch = 2  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
-train.n_epochs = 3  # Total number of epochs (including previous training epochs)
+train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
+train.n_epochs = 200  # Total number of epochs (including previous training epochs)
 train.save_period = 10  # Period (in epochs) for tensorboard logs and model saves
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
 train.normalize_latent_loss = True  # Normalize the latent over z-dimension
