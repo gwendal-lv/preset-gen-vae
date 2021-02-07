@@ -8,7 +8,8 @@ import librosa.display
 
 
 def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info=False,
-                      plot_error=False, error_magnitude=1.0, max_nb_specs=4, spec_ax_w=2.5, spec_ax_h=2.5):
+                      plot_error=False, error_magnitude=1.0, max_nb_specs=4, spec_ax_w=2.5, spec_ax_h=2.5,
+                      add_colorbar=False):
     """
     Creates a figure and axes to plot some ground-truth spectrograms (1st row) and optional reconstructed
     spectrograms (2nd row)
@@ -22,6 +23,8 @@ def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info
     :param spec_ax_w: width (in figure units) of a single spectrogram
     """
     nb_specs = np.minimum(max_nb_specs, specs_GT.size(0))
+    if add_colorbar:
+        spec_ax_w *= 1.3
     if specs_recons is None:
         assert plot_error is False  # Cannot plot error without a reconstruction to be compared
         fig, axes = plt.subplots(1, nb_specs, figsize=(nb_specs*spec_ax_w, spec_ax_h))
@@ -48,10 +51,13 @@ def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info
                       .format(UID, spectrogram.min(), spectrogram.max()))
             if row == 0 and UID is not None:
                 axes[row][i].set(title="{}".format(UID))
-            librosa.display.specshow(spectrogram, shading='flat', ax=axes[row][i],
-                                     cmap=('magma' if row < 2 else 'bwr'),
-                                     vmin=(-error_magnitude if row ==2 else None),
-                                     vmax=(error_magnitude if row == 2 else None))
+            im = librosa.display.specshow(spectrogram, shading='flat', ax=axes[row][i],
+                                          cmap=('magma' if row < 2 else 'bwr'),
+                                          vmin=(-error_magnitude if row ==2 else None),
+                                          vmax=(error_magnitude if row == 2 else None))
+            if add_colorbar:
+                clb = fig.colorbar(im, ax=axes[row][i], orientation='vertical')
+
 
     fig.tight_layout()
     return fig, axes

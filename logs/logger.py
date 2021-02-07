@@ -17,7 +17,7 @@ import torchinfo
 
 from .tbwriter import TensorboardSummaryWriter  # Custom modified summary writer
 
-_erase_security_time_s = 2.0
+_erase_security_time_s = 5.0
 
 
 def get_model_run_directory(root_path, model_config):

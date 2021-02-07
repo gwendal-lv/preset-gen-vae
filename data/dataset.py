@@ -35,7 +35,8 @@ class DexedDataset(torch.utils.data.Dataset):
                  algos=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
-                 normalize_audio=False, spectrogram_min_dB=-200.0, spectrogram_dynamic_range_dB=100.0,
+                 normalize_audio=False,
+                 spectrogram_min_dB=-120.0, spectrogram_normalization='min_max'
                  ):
         """
         Allows access to Dexed preset values and names, and generates spectrograms and corresponding
@@ -49,6 +50,8 @@ class DexedDataset(torch.utils.data.Dataset):
         :param n_mel_bins: Number of frequency bins for the Mel-spectrogram. If -1, the normal STFT will be
         used instead.
         :param note_duration: Tuple of (note_on, note_off) durations in seconds
+        :param spectrogram_normalization: 'min_max' to get output spectrogram values in [-1, 1], or 'mean_std'
+        to et zero-mean unit-variance output spectrograms. None to disable normalization.
         """
         self.note_duration = note_duration
         self.normalize_audio = normalize_audio
@@ -88,19 +91,18 @@ class DexedDataset(torch.utils.data.Dataset):
         del dexed_db
         # - - - Spectrogram utility class
         if self.n_mel_bins <= 0:
-            self.spectrogram = utils.audio.Spectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB,
-                                                       spectrogram_dynamic_range_dB)
+            self.spectrogram = utils.audio.Spectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB)
         else:  # TODO do not hardcode Fs?
             self.spectrogram = utils.audio.MelSpectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB,
-                                                          spectrogram_dynamic_range_dB, self.n_mel_bins, 22050)
+                                                          self.n_mel_bins, 22050)
         # try load spectrogram min/max/mean/std statistics
+        self.spectrogram_normalization = spectrogram_normalization
         try:
             f = open(self._get_spectrogram_stats_file(), 'r')
-            self.spectrogram_stats = json.load(f)
+            self.spec_stats = json.load(f)
         except IOError:
-            self.spectrogram_stats = {'mean': 0.0, 'std': 1.0}  # corresponds to no scaling
-            print("[DexedDataset] No pre-computed spectrogram stats can be found."
-                  " Default 0.0 mean, 1.0 std will be used")
+            self.spec_stats = None
+            print("[DexedDataset] No pre-computed spectrogram stats can be found. No normalization will be performed")
 
     def __len__(self):
         return len(self.valid_preset_UIDs)
@@ -131,7 +133,12 @@ class DexedDataset(torch.utils.data.Dataset):
         preset_params = self.get_preset_params(preset_UID)
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
         # Spectrogram, or Mel-Spectrogram if requested
-        spectrogram = (self.spectrogram(x_wav) - self.spectrogram_stats['mean'])/self.spectrogram_stats['std']
+        spectrogram = self.spectrogram(x_wav)
+        if self.spectrogram_normalization == 'min_max':  # result in [-1, 1]
+            spectrogram = -1.0 + (spectrogram - self.spec_stats['min'])\
+                          / ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)
+        elif self.spectrogram_normalization == 'mean_std':
+            spectrogram = (spectrogram - self.spec_stats['mean']) / self.spec_stats['std']
         # Tuple output. Warning: torch.from_numpy does not copy values
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
@@ -139,7 +146,12 @@ class DexedDataset(torch.utils.data.Dataset):
             torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32)
 
     def denormalize_spectrogram(self, spectrogram):
-        return spectrogram * self.spectrogram_stats['std'] + self.spectrogram_stats['mean']
+        if self.spectrogram_normalization == 'min_max':  # result in [-1, 1]
+            # TODO check this for audio reconstruction
+            return (spectrogram + 1.0) * ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)\
+                   + self.spec_stats['min']
+        elif self.spectrogram_normalization == 'mean_std':
+            return spectrogram * self.spec_stats['std'] + self.spec_stats['mean']
 
     # TODO un-mel method
 
@@ -162,9 +174,12 @@ class DexedDataset(torch.utils.data.Dataset):
         return len(self.learnable_params_idx)
 
     def __str__(self):
-        return "Dataset of {}/{} Dexed presets. {} learnable synth params, {} fixed params." \
+        return "Dataset of {}/{} Dexed presets. {} learnable synth params, {} fixed params. " \
+               "{} Spectrogram items, size={}, min={:.1f}dB, normalization:{}" \
             .format(len(self), self.total_nb_presets, len(self.learnable_params_idx),
-                    self.total_nb_params - len(self.learnable_params_idx))
+                    self.total_nb_params - len(self.learnable_params_idx),
+                    ("Linear" if self.n_mel_bins <= 0 else "Mel"), self.get_spectrogram_tensor_size(),
+                    self.spectrogram.min_dB, self.spectrogram_normalization)
 
     @staticmethod
     def _get_spectrogram_stats_folder():
@@ -256,7 +271,7 @@ class DexedDataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
 
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = True  # quite long (15min)
+    regenerate_wav = False  # quite long (15min)
     regenerate_spectrograms_stats = True  # approx 3 min
 
     import sys
@@ -265,10 +280,10 @@ if __name__ == "__main__":
 
     dexed_dataset = DexedDataset(note_duration=config.model.note_duration,
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
-                                 n_mel_bins=config.model.mel_bins)
+                                 n_mel_bins=config.model.mel_bins,
+                                 spectrogram_normalization=None,  # No normalization, to compute stats
+                                 spectrogram_min_dB=config.model.spectrogram_min_dB)
     print(dexed_dataset)
-    spec, _, _ = dexed_dataset[0]
-    print("Spectrogram size: {}".format(torch.squeeze(spec).size()))
 
     if regenerate_wav:
         # WRITE ALL WAV FILES (approx. 13Go for 5.0s audio)

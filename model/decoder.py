@@ -13,7 +13,7 @@ class SpectrogramDecoder(nn.Module):
         self.spectrogram_input_size = spectrogram_input_size
         self.dim_z = dim_z  # Latent-vector size
         self.architecture = architecture
-        self.cnn = SpectrogramCNN(self.architecture)
+        self.cnn = SpectrogramCNN(self.architecture, self.spectrogram_input_size)
         self.cnn_input_shape = None  # shape not including batch size
 
         # MLP output size must to correspond to encoder MLP's input size
@@ -46,20 +46,18 @@ class SpectrogramDecoder(nn.Module):
     def forward(self, z_sampled):
         cnn_input = self.mlp(z_sampled)
         cnn_input = cnn_input.view(-1, self.cnn_input_shape[0], self.cnn_input_shape[1], self.cnn_input_shape[2])
+        # TODO test bigger output spectrogram - with final centered crop
         return self.cnn(cnn_input)
 
 
 class SpectrogramCNN(nn.Module):
     """ A decoder CNN network for spectrogram output """
 
-    # TODO Option to enable res skip connections
-    # TODO Option to choose activation function
-    def __init__(self, architecture):
-        """ Defines a decoder given the specified architecture.
-        Padding is chosen such that the last output is a few pixels larger than the target spectrogram
-        """
+    def __init__(self, architecture, spectrogram_input_size):
+        """ Defines a decoder given the specified architecture. """
         super().__init__()
         self.architecture = architecture
+        self.spectrogram_input_size = spectrogram_input_size
 
         if self.architecture == 'wavenet_baseline':  # https://arxiv.org/abs/1704.01279
             ''' Symmetric layer output sizes (compared to the encoder).
@@ -85,7 +83,7 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec8'),
                                         layer.TConv2D(128, 128, [5, 5], [2, 2], 2, output_padding=[0, 0],
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec9'),
-                                        nn.ConvTranspose2d(128, 1, [5, 5], [2, 2], 2)
+                                        nn.ConvTranspose2d(128, 1, [5, 5], [2, 2], 2)  # TODO bounded activation
                                         )
 
         elif self.architecture == 'wavenet_baseline_lighter':
@@ -109,7 +107,7 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec8'),
                                         layer.TConv2D(32, 16, [5, 5], [2, 2], 2, output_padding=[0, 0],
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec9'),
-                                        nn.ConvTranspose2d(16, 1, [5, 5], [2, 2], 2)
+                                        nn.ConvTranspose2d(16, 1, [5, 5], [2, 2], 2)  # TODO bounded activation
                                         )
 
         elif self.architecture == 'wavenet_baseline_shallow':  # Inspired from wavenet_baseline
@@ -127,23 +125,29 @@ class SpectrogramCNN(nn.Module):
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec6'),
                                         layer.TConv2D(16, 8, [4, 4], [2, 2], 2, output_padding=[1, 1],
                                                       activation=nn.LeakyReLU(0.1), name_prefix='dec7'),
-                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)
+                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)  # TODO bounded activation
                                         )
 
-        elif self.architecture == 'flow_synth':  # TODO ??? GB (RAM) ; ??? GMultAdd (batch 256) (inc. linear layers)
-            ''' This decoder is as GPU-heavy as wavenet_baseline '''
+        elif self.architecture == 'flow_synth':
+            ''' This decoder seems as GPU-heavy as wavenet_baseline?? '''
             n_lay = 64  # 128/2 for paper's comparisons consistency. Could be larger
             k7 = [7, 7]  # Kernel of size 7
-            self.dec_nn = nn.Sequential(layer.TConv2D(n_lay, n_lay, k7, [2, 2], 3,
+            if spectrogram_input_size == (513, 433):
+                pads = [3, 3, 3, 3, 2]  # FIXME
+                out_pads = None
+            elif spectrogram_input_size == (257, 347):  # 7.7 GB (RAM), 6.0 GMultAdd (batch 256) (inc. linear layers)
+                pads = [3, 3, 3, 3, 2]
+                out_pads = [0, [1, 0], [0, 1], [1, 0]]  # No output padding on last layer
+            self.dec_nn = nn.Sequential(layer.TConv2D(n_lay, n_lay, k7, [2, 2], pads[0], out_pads[0], [2, 2],
                                                       activation=nn.ELU(), name_prefix='dec1'),
-                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], 3,
+                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], pads[1], out_pads[1], [2, 2],
                                                       activation=nn.ELU(), name_prefix='dec2'),
-                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], 3,
+                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], pads[2], out_pads[2], [2, 2],
                                                       activation=nn.ELU(), name_prefix='dec3'),
-                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], 3,
+                                        layer.TConv2D(n_lay, n_lay, k7, [2, 2], pads[3], out_pads[3], [2, 2],
                                                       activation=nn.ELU(), name_prefix='dec4'),
-                                        layer.TConv2D(n_lay, 1, k7, [2, 2], 2,
-                                                      activation=nn.ELU(), name_prefix='dec5')
+                                        nn.ConvTranspose2d(n_lay, 1, k7, [2, 2], pads[4]),
+                                        nn.Tanh()
                                         )
 
         elif self.architecture == 'speccnn8l1':  # 1.8 GB (RAM) ; 0.36 GMultAdd  (batch 256)
@@ -164,7 +168,8 @@ class SpectrogramCNN(nn.Module):
                                                       activation=act(act_p), name_prefix='dec6'),
                                         layer.TConv2D(16, 8, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
-                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2)
+                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2),
+                                        nn.Tanh()
                                         )
 
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 2.4 GMultAdd  (batch 256)
@@ -184,7 +189,8 @@ class SpectrogramCNN(nn.Module):
                                                       activation=act(act_p), name_prefix='dec6'),
                                         layer.TConv2D(64, 32, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
-                                        nn.ConvTranspose2d(32, 1, [5, 5], [2, 2], 2)
+                                        nn.ConvTranspose2d(32, 1, [5, 5], [2, 2], 2),
+                                        nn.Tanh()
                                         )
 
         else:

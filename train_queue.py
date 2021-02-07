@@ -23,10 +23,10 @@ that no config modification should be performed
 """
 # Run 0
 model_config_mods.append({})
-train_config_mods.append({'start_epoch': 2, 'n_epochs': 10})
-# Run 1
-model_config_mods.append({'run_name': '05_autoqueue_2'})
 train_config_mods.append({})
+# Run 1
+model_config_mods.append({'run_name': '04_8l1_plateau10_reconsloss'})
+train_config_mods.append({'scheduler_loss': 'ReconsLoss'})
 
 # = = = = = = = = = = end of config.py modifications = = = = = = = = = =
 

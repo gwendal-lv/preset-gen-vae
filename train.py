@@ -202,15 +202,15 @@ def train_config():
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                 lat_loss *= scalars['Sched/beta'].get(epoch)
                 scalars['LatLoss/Valid'].append(lat_loss)
-                # TODO tensorboard save samples for minibatch eval [0]
-                # TODO Faire propre !
+                # tensorboard samples for minibatch 'eval' [0]
                 if i == 0:
                     fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
-                                                             max_nb_specs=config.train.logged_samples_count)
+                                                             max_nb_specs=config.train.logged_samples_count,
+                                                             add_colorbar=True)
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
-        # Dynamic LR scheduling depends on validation performance
         scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
-        scheduler.step(scalars['VAELoss/Valid'].value)
+        # Dynamic LR scheduling depends on validation performance. Loss for plateau-detection is chosen in config.py
+        scheduler.step(scalars['{}/Valid'.format(config.train.scheduler_loss)].get())
         scalars['Sched/LR'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
         early_stop = (optimizer.param_groups[0]['lr'] < config.train.early_stop_lr_threshold)  # Early stop?
 

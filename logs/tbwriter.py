@@ -41,11 +41,12 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         # Full-Config is required. Default constructor values allow to keep the same first constructor args
         self.model_config = model_config
         self.train_config = train_config
-        self.restart_from_checkpoint = (train_config.start_epoch > 0)
+        self.resume_from_checkpoint = (train_config.start_epoch > 0)
         self.hyper_params = dict()
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['encarch'] = self.model_config.encoder_architecture
         self.hyper_params['mels'] = self.model_config.mel_bins
+        self.hyper_params['mindB'] = self.model_config.spectrogram_min_dB
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
         self.hyper_params['wdecay'] = self.train_config.weight_decay
         # TODO all loss types in hparams
@@ -59,7 +60,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
 
         :param metrics: Dict of BufferedMetric
         """
-        if not self.restart_from_checkpoint:  # tensorboard init at epoch 0 only
+        if not self.resume_from_checkpoint:  # tensorboard init at epoch 0 only
             # Some processing on hparams can be done here... none at the moment
             self.update_metrics(metrics)
 

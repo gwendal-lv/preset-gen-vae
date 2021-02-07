@@ -63,6 +63,7 @@ class SpectrogramCNN(nn.Module):
 
         if self.architecture == 'wavenet_baseline'\
            or self.architecture == 'wavenet_baseline_lighter':  # this encoder is quite light already
+            # TODO adapt to smaller spectrograms
             ''' Based on strided convolutions - no max pool (reduces the total amount of
              conv operations).  https://arxiv.org/abs/1704.01279
              No dilation: the receptive field in enlarged through a larger number
@@ -114,7 +115,8 @@ class SpectrogramCNN(nn.Module):
                                                      activation=nn.LeakyReLU(0.1), name_prefix='enc8'),
                                         )
 
-        elif self.architecture == 'flow_synth':  # 7.7 GB (RAM), 1.4 GMultAdd (batch 256) (inc. linear layers)
+        elif self.architecture == 'flow_synth':
+            # spectrogram (257, 347):   7.7 GB (RAM), 1.4 GMultAdd (batch 256) (inc. linear layers)
             ''' https://acids-ircam.github.io/flow_synthesizer/#models-details
             Based on strided convolutions and dilation to quickly enlarge the receptive field.
             Paper says: "5 layers with 128 channels of strided dilated 2-D convolutions with kernel
