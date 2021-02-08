@@ -25,8 +25,8 @@ that no config modification should be performed
 model_config_mods.append({})
 train_config_mods.append({})
 # Run 1
-model_config_mods.append({'run_name': '04_8l1_plateau10_reconsloss'})
-train_config_mods.append({'scheduler_loss': 'ReconsLoss'})
+model_config_mods.append({'run_name': '14_tanh_warmup', 'encoder_architecture': 'speccnn8l1'})
+train_config_mods.append({})
 
 # = = = = = = = = = = end of config.py modifications = = = = = = = = = =
 

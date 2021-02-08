@@ -26,7 +26,7 @@ import model.loss
 import model.build
 import logs.logger
 import logs.metrics
-from logs.metrics import SimpleMetric, EpochMetric
+from logs.metrics import SimpleMetric, EpochMetric, LatentMetric
 import data.dataset
 import utils.data
 import utils.profile
@@ -71,8 +71,9 @@ def train_config():
         # 4*GPU count: optimal w/ light dataloader (e.g. (mel-)spectrogram computation)
         num_workers = min(config.train.minibatch_size, torch.cuda.device_count() * 4)
     for dataset_type in dataset:
+        # Persistent workers crash with pin_memory - but are more efficient than pinned memory
         dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
-                                              num_workers=num_workers, pin_memory=True)
+                                              num_workers=num_workers, pin_memory=False, persistent_workers=True)
         if config.train.verbosity >= 1:
             print("Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}".format(dataset_type, len(dataset[dataset_type]), len(full_dataset), 100.0 * len(dataset[dataset_type])/len(full_dataset), num_workers))
 
@@ -118,6 +119,9 @@ def train_config():
     scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
                'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
                'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
+               'ContLoss/Train': EpochMetric(), 'ContLoss/Valid': EpochMetric(),
+               'LatCorr/Train': LatentMetric(config.model.dim_z, len(dataset['train'])),
+               'LatCorr/Valid': LatentMetric(config.model.dim_z, len(dataset['validation'])),
                'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
                'Sched/beta': LinearDynamicParam(config.train.beta_start_value, config.train.beta,
                                                 end_epoch=config.train.beta_warmup_epochs,
@@ -125,6 +129,8 @@ def train_config():
     # Losses here are Validation losses. Metrics need an '_' to be different from scalars (tensorboard mixes them)
     metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
                'LatLoss/Valid_': logs.metrics.BufferedMetric(),
+               'LatCorr/Valid_': logs.metrics.BufferedMetric(),
+               'ContLoss/Valid_': logs.metrics.BufferedMetric(),  # TODO compensated MSE
                'epochs': config.train.start_epoch}
     # TODO check metrics as required in config.py
     logger.tensorboard.init_hparams_and_metrics(metrics)  # hparams added knowing config.*
@@ -159,7 +165,7 @@ def train_config():
         # = = = = = Re-init of epoch metrics = = = = =
         for _, s in scalars.items():
             s.on_new_epoch()
-        # TODO log_samples ou pas
+        should_plot = (epoch % config.train.plot_period == 0)
 
         # = = = = = Train all mini-batches (optional profiling) = = = = =
         # when profiling is disabled: true no-op context manager, and prof is None
@@ -172,13 +178,15 @@ def train_config():
                     x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 optimizer.zero_grad()
                 z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
+                scalars['LatCorr/Train'].append(z_mu_logvar, z_sampled)
                 with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                     recons_loss = reconstruction_criterion(x_out, x_in)
                     scalars['ReconsLoss/Train'].append(recons_loss)
                     lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
-                    lat_loss *= scalars['Sched/beta'].get(epoch)
                     scalars['LatLoss/Train'].append(lat_loss)
-                    (recons_loss + lat_loss).backward()
+                    lat_loss *= scalars['Sched/beta'].get(epoch)
+                    scalars['ContLoss/Train'].append(0.0)  # TODO
+                    (recons_loss + lat_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
                 logger.on_minibatch_finished(i)
@@ -197,13 +205,15 @@ def train_config():
             for i, sample in enumerate(dataloader['validation']):
                 x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
+                scalars['LatCorr/Valid'].append(z_mu_logvar, z_sampled)
                 recons_loss = reconstruction_criterion(x_out, x_in)
                 scalars['ReconsLoss/Valid'].append(recons_loss)
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
-                lat_loss *= scalars['Sched/beta'].get(epoch)
                 scalars['LatLoss/Valid'].append(lat_loss)
-                # tensorboard samples for minibatch 'eval' [0]
-                if i == 0:
+                lat_loss *= scalars['Sched/beta'].get(epoch)
+                scalars['ContLoss/Valid'].append(0.0)  # TODO
+                # tensorboard samples for minibatch 'eval' [0] only
+                if i == 0 and should_plot:
                     fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
                                                              max_nb_specs=config.train.logged_samples_count,
                                                              add_colorbar=True)
@@ -217,9 +227,16 @@ def train_config():
         # = = = = = Epoch logs (scalars/sounds/images + updated metrics) = = = = =
         for k, s in scalars.items():  # All available scalars are written to tensorboard
             logger.tensorboard.add_scalar(k, s.get(), epoch)
+        if should_plot or early_stop:
+            fig, _ = utils.figures.plot_latent_distributions_stats(latent_metric=scalars['LatCorr/Valid'])
+            logger.tensorboard.add_figure('LatentMu', fig, epoch)
+            fig, _ = utils.figures.plot_spearman_correlation(latent_metric=scalars['LatCorr/Valid'])
+            logger.tensorboard.add_figure('LatentEntanglement', fig, epoch)
         metrics['epochs'] = epoch + 1
         metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
+        metrics['LatCorr/Valid_'].append(scalars['LatCorr/Valid'].get())
+        metrics['ContLoss/Valid_'].append(scalars['ContLoss/Valid'].get())
         logger.tensorboard.update_metrics(metrics)
 
         # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =
@@ -227,7 +244,7 @@ def train_config():
             logger.save_checkpoint(epoch, ae_model, optimizer, scheduler)
         logger.on_epoch_finished(epoch)
         if early_stop:
-            print("Training stopped early (loss final plateau)")
+            print("[train.py] Training stopped early (final loss plateau)")
             break
 
 

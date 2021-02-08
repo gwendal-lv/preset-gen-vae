@@ -10,6 +10,7 @@
   hierarchical structure allows comparing models and/or runs of a given model 
 * ```./saved/model_name/run_name/config.json``` stores the full config (model, hyperparams, etc...) of a given run  
 * ```./saved/model_name/run_name/models/```  stores trained models (sorted by epoch)
+* Same structure in ```./saved_archives``` (put all old/deprecated reference models in here)
 
 ## Branches
 

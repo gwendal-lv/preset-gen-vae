@@ -16,11 +16,11 @@ from utils.config import _Config  # Empty class
 
 
 model = _Config()
-model.name = "BasicVAE"
-model.run_name = '12_flowsynth_tanh'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "SpecVAE"
+model.run_name = '02_basemodel'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
-model.encoder_architecture = 'flow_synth'
+model.encoder_architecture = 'speccnn8l1'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
@@ -32,6 +32,12 @@ model.spectrogram_min_dB = -120.0
 model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from audio/stft params
 # Latent space dimension
 model.dim_z = 256
+# Modeling of synth controls probability distributions
+model.controls_losses = 'none'  # Gaussian-only, or Gaussian for continuous and Categorical for discrete
+# Synth used - please include indication on the sub-dataset used
+model.synth = 'dexed*'
+model.dataset = ('full',)  # List of flags/values to describe the dataset to be used
+# TODO learnable params count into hyper-parameters
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -42,20 +48,22 @@ train.minibatch_size = 256
 train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datasets sizes (total must be 1.0)
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 train.n_epochs = 200  # Total number of epochs (including previous training epochs)
-train.save_period = 20  # Period (in epochs) for model saves. Tensorboard logs at all epochs.
+train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
+train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
 train.normalize_latent_loss = True  # Normalize the latent over z-dimension
-train.ae_reconstruction_loss = 'MSE'
-train.metrics = ('ReconsLoss', 'LatLoss')
+train.ae_reconstruction_loss = 'MSE'  # TODO try spectral convergence?
+# TODO loss types for controls... different losses for learning and evaluation
+train.metrics = ('ReconsLoss', 'LatLoss')  # unused... metrics currently hardcoded in train.py
 
 train.optimizer = 'Adam'
 train.initial_learning_rate = 2e-4
-train.weight_decay = 1e-6  # Dynamic weight decay?
+train.weight_decay = 1e-4  # Dynamic weight decay?
 train.beta = 1.0  # Regularization factor for the latent loss
-train.beta_start_value = 1.0  # TODO re-activate beta warmup
-train.beta_warmup_epochs = 20  # Epochs of warmup increase from 0.0 to beta
+train.beta_start_value = 0.5
+train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
 
-train.scheduler_name = 'ReduceLROnPlateau'
+train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing!
 train.scheduler_loss = 'ReconsLoss'  # Possible values: 'VAELoss' (total), 'ReconsLoss'
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 10

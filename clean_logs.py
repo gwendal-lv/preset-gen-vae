@@ -28,7 +28,7 @@ if __name__ == "__main__":
         model_config.logs_root_dir = "saved"
         # = = = = = Insert here model and run to be erased = = = = =
         model_config.name = 'BasicVAE'
-        model_config.run_name = '04_8l1_plateau10_reconsloss'
+        model_config.run_name = '15_dummy'
         # = = = = = Insert here model and run to be erased = = = = =
 
     logs.logger.erase_run_data(Path(__file__).resolve().parent, model_config)

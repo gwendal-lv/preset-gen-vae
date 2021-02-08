@@ -121,11 +121,12 @@ class SpectrogramCNN(nn.Module):
             Based on strided convolutions and dilation to quickly enlarge the receptive field.
             Paper says: "5 layers with 128 channels of strided dilated 2-D convolutions with kernel
             size 7, stride 2 and an exponential dilation factor of 2l (starting at l=0) with batch
-            normalization and ELU activation."
+            normalization and ELU activation." Code from their git repo:
+            dil = ((args.dilation == 3) and (2 ** l) or args.dilation)
+            pad = 3 * (dil + 1)
             
             Potential issue: this dilation is extremely big for deep layers 4 and 5. Dilated kernel is applied
-            mostly on zero-padded values. We should either stride-conv or 2^l dilate? Or maybe the
-             dilation is not clearly explained in the paper '''
+            mostly on zero-padded values. We should either stride-conv or 2^l dilate, but not both '''
             n_lay = 64  # 128/2 for paper's comparisons consistency. Could be larger
             self.enc_nn = nn.Sequential(layer.Conv2D(1, n_lay, [7,7], [2,2], 3, [1,1],
                                                      activation=nn.ELU(), name_prefix='enc1'),
@@ -156,7 +157,8 @@ class SpectrogramCNN(nn.Module):
                                                      activation=act(act_p), name_prefix='enc6'),
                                         layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc7'),
-                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
+                                        # TODO test remove BN - will break load compatibility
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], #batch_norm=None,
                                                      activation=act(act_p), name_prefix='enc8'),
                                         )
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)

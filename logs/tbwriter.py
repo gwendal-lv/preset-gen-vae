@@ -43,8 +43,10 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.train_config = train_config
         self.resume_from_checkpoint = (train_config.start_epoch > 0)
         self.hyper_params = dict()
+        self.hyper_params['synth'] = self.model_config.synth
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['encarch'] = self.model_config.encoder_architecture
+        self.hyper_params['contloss'] = self.model_config.controls_losses
         self.hyper_params['mels'] = self.model_config.mel_bins
         self.hyper_params['mindB'] = self.model_config.spectrogram_min_dB
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
