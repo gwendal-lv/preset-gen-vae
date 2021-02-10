@@ -16,11 +16,11 @@ from utils.config import _Config  # Empty class
 
 
 model = _Config()
-model.name = "SpecVAE"
-model.run_name = '02_basemodel'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "SpecVAE1"
+model.run_name = '00_base'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
-model.encoder_architecture = 'speccnn8l1'
+model.encoder_architecture = 'speccnn8l1_bn'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
@@ -58,12 +58,15 @@ train.metrics = ('ReconsLoss', 'LatLoss')  # unused... metrics currently hardcod
 
 train.optimizer = 'Adam'
 train.initial_learning_rate = 2e-4
+train.adam_betas = (0.9, 0.999)  # default (0.9, 0.999)
 train.weight_decay = 1e-4  # Dynamic weight decay?
+train.fc_dropout = 0.0
 train.beta = 1.0  # Regularization factor for the latent loss
 train.beta_start_value = 0.5
 train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
+train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
-train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing!
+train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
 train.scheduler_loss = 'ReconsLoss'  # Possible values: 'VAELoss' (total), 'ReconsLoss'
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 10

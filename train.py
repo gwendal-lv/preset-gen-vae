@@ -79,7 +79,7 @@ def train_config():
 
 
     # ========== Model definition ==========
-    _, _, ae_model = model.build.build_ae_model(config.model)
+    _, _, ae_model = model.build.build_ae_model(config.model, config.train)
     if start_checkpoint is not None:
         ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
     ae_model.eval()
@@ -140,7 +140,7 @@ def train_config():
     ae_model.train()
     if config.train.optimizer == 'Adam':
         optimizer = torch.optim.Adam(ae_model.parameters(), lr=config.train.initial_learning_rate,
-                                     weight_decay=config.train.weight_decay)
+                                     weight_decay=config.train.weight_decay, betas=config.train.adam_betas)
     else:
         raise NotImplementedError()
     if config.train.scheduler_name == 'ReduceLROnPlateau':

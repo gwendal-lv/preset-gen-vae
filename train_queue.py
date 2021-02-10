@@ -21,12 +21,33 @@ Please write two lists of dicts, such that:
 - each dict key corresponds to an attribute of config.model.* or config.train.*. Empty dict to indicate
 that no config modification should be performed
 """
+# TODO tester avec less_bn mais dropout un peu + fort (0.2 ?) pour garder mu_z bien homogène
 # Run 0
-model_config_mods.append({})
-train_config_mods.append({})
+model_config_mods.append({'run_name': '07-1_lessbn_fcdrop0.2'})
+train_config_mods.append({'fc_dropout': 0.2})
 # Run 1
-model_config_mods.append({'run_name': '14_tanh_warmup', 'encoder_architecture': 'speccnn8l1'})
+model_config_mods.append({'run_name': '07-2_lessbn_fcdrop0.2'})
+train_config_mods.append({'fc_dropout': 0.2})
+"""
+# Run 2
+model_config_mods.append({'run_name': '06-1_adambeta0.8'})
+train_config_mods.append({'adam_betas': (0.8, 0.999)})
+# Run 3
+model_config_mods.append({'run_name': '06-2_adambeta0.8'})
+train_config_mods.append({'adam_betas': (0.8, 0.999)})
+# Run 4
+model_config_mods.append({'run_name': '03_less_bn', 'encoder_architecture': 'speccnn8l1_bn'})
 train_config_mods.append({})
+# Run 5
+model_config_mods.append({'run_name': '03-2_less_bn', 'encoder_architecture': 'speccnn8l1_bn'})
+train_config_mods.append({})
+# Run 6
+model_config_mods.append({'run_name': '04_fc_drop_0.3'})
+train_config_mods.append({'fc_dropout': 0.3})
+# Run 7
+model_config_mods.append({'run_name': '04-2_fc_drop_0.3'})
+train_config_mods.append({'fc_dropout': 0.3})
+"""
 
 # = = = = = = = = = = end of config.py modifications = = = = = = = = = =
 

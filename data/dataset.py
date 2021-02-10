@@ -102,6 +102,7 @@ class DexedDataset(torch.utils.data.Dataset):
             self.spec_stats = json.load(f)
         except IOError:
             self.spec_stats = None
+            self.spectrogram_normalization = None  # Normalization disabled
             print("[DexedDataset] No pre-computed spectrogram stats can be found. No normalization will be performed")
 
     def __len__(self):

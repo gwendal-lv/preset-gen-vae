@@ -51,6 +51,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['mindB'] = self.model_config.spectrogram_min_dB
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
         self.hyper_params['wdecay'] = self.train_config.weight_decay
+        self.hyper_params['fcdrop'] = self.train_config.fc_dropout
         # TODO all loss types in hparams
         self.hyper_params['latloss'] = self.train_config.latent_loss
         self.hyper_params['recloss'] = self.train_config.ae_reconstruction_loss

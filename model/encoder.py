@@ -14,28 +14,30 @@ def available_architectures():
             'wavenet_baseline_shallow',  # 8 layers instead of 10 - brutally reduced feature maps count
             'flow_synth',
             'speccnn8l1',  # Custom 8-layer CNN + 1 linear very light architecture
-            'speccnn8l1_2',  # More channels per layer
+            'speccnn8l1_bn'  # Same base config, different BN usage (no BN on first/last layers)
+            'speccnn8l1_2',  # More channels per layer.... but no significant perf improvement
             ]
 
 
 class SpectrogramEncoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu and logs(var) values"""
-    def __init__(self, architecture, dim_z, spectrogram_input_size):
+    def __init__(self, architecture, dim_z, spectrogram_input_size, fc_dropout):
         super().__init__()
         self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and logs sigma 2)
         self.architecture = architecture
         self.cnn = SpectrogramCNN(self.architecture)
+        self.fc_dropout = fc_dropout
         # Automatic CNN output tensor size inference
         with torch.no_grad():
             dummy_spectrogram = torch.unsqueeze(torch.unsqueeze(torch.zeros(spectrogram_input_size), 0), 0)
             self.cnn_out_size = self.cnn(dummy_spectrogram).size()
-        # MLP for extracting proper latent vector
+        # MLP for extracting proper latent vector. No activation - outputs are latent mu/logvar
         cnn_out_items = self.cnn_out_size[1] * self.cnn_out_size[2] * self.cnn_out_size[3]
         if 'wavenet_baseline' in self.architecture\
-                or 'speccnn8l1' in self.architecture:
-            self.mlp = nn.Linear(cnn_out_items, 2 * self.dim_z)  # (not an MLP...) much is done in the CNN
+                or 'speccnn8l1' in self.architecture:  # (not an MLP...) much is done in the CNN
+            self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 2 * self.dim_z), nn.Dropout(self.fc_dropout))
         elif self.architecture == 'flow_synth':
-            self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 1024), nn.ReLU(),
+            self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 1024), nn.ReLU(),  # TODO dropouts
                                      nn.Linear(1024, 1024), nn.ReLU(),
                                      nn.Linear(1024, 2 * self.dim_z))
         else:
@@ -140,7 +142,9 @@ class SpectrogramCNN(nn.Module):
                                                      activation=nn.ELU(), name_prefix='enc5'))
 
         elif self.architecture == 'speccnn8l1':  # 1.7 GB (RAM) ; 0.12 GMultAdd  (batch 256)
-            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
+            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced.
+            Where to use BN?
+            'Super-Resolution GAN' generator does not use BN in the first and last conv layers.'''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
             self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1],
@@ -157,8 +161,35 @@ class SpectrogramCNN(nn.Module):
                                                      activation=act(act_p), name_prefix='enc6'),
                                         layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc7'),
-                                        # TODO test remove BN - will break load compatibility
-                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], #batch_norm=None,
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc8'),
+                                        )
+            # TODO le même mais avec des res-blocks add (avg-pool?)
+            # TODO le même mais + profond (couches sans stride)
+            # TODO le même mais + profond, en remplacer chaque conv 2d par un res-block 2 couches
+        elif self.architecture == 'speccnn8l1_bn':  # 1.7 GB (RAM) ; 0.12 GMultAdd  (batch 256)
+            ''' Where to use BN? 'ESRGAN' generator does not use BN in the first and last conv layers.
+            DCGAN: no BN on discriminator in out generator out.
+            Our experiments show: much more stable latent loss with no BNbefore the FC that regresses mu/logvar,
+            consistent training runs 
+            TODO try BN before act (see DCGAN arch) '''
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1], batch_norm=None,
+                                                     activation=act(act_p), name_prefix='enc1'),
+                                        layer.Conv2D(8, 16, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc2'),
+                                        layer.Conv2D(16, 32, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc3'),
+                                        layer.Conv2D(32, 64, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc4'),
+                                        layer.Conv2D(64, 128, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc5'),
+                                        layer.Conv2D(128, 256, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc6'),
+                                        layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc7'),
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
                                                      activation=act(act_p), name_prefix='enc8'),
                                         )
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)

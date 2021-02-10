@@ -6,19 +6,20 @@ or for building a previously trained model.
 from model import VAE, encoder, decoder
 
 
-def build_ae_model(model_config):
+def build_ae_model(model_config, train_config):
     """
     Builds an auto-encoder model given a configuration. Built model can be initialized later
     with a previous state_dict.
 
     :param model_config: model global attribute from the config.py module
+    :param train_config: train attributes (a few are required, e.g. dropout probability)
     :return: Tuple: encoder, decoder, full AE model
     """
     # Encoder and decoder with the same architecture
     encoder_model = encoder.SpectrogramEncoder(model_config.encoder_architecture, model_config.dim_z,
-                                               model_config.spectrogram_size)
+                                               model_config.spectrogram_size, train_config.fc_dropout)
     decoder_model = decoder.SpectrogramDecoder(model_config.encoder_architecture, model_config.dim_z,
-                                               model_config.spectrogram_size)
+                                               model_config.spectrogram_size, train_config.fc_dropout)
     ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model)  # Not parallelized yet
     return encoder_model, decoder_model, ae_model
 

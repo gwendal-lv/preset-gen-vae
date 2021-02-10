@@ -8,13 +8,14 @@ from model import layer
 
 class SpectrogramDecoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu/logsigma2 values"""
-    def __init__(self, architecture, dim_z, spectrogram_input_size):
+    def __init__(self, architecture, dim_z, spectrogram_input_size, fc_dropout):
         super().__init__()
         self.spectrogram_input_size = spectrogram_input_size
         self.dim_z = dim_z  # Latent-vector size
         self.architecture = architecture
         self.cnn = SpectrogramCNN(self.architecture, self.spectrogram_input_size)
         self.cnn_input_shape = None  # shape not including batch size
+        self.fc_dropout = fc_dropout
 
         # MLP output size must to correspond to encoder MLP's input size
         if self.architecture == 'wavenet_baseline'\
@@ -31,13 +32,15 @@ class SpectrogramDecoder(nn.Module):
                 self.cnn_input_shape = (64, 17, 14)
             elif spectrogram_input_size == (257, 347):
                 self.cnn_input_shape = (64, 3, 6)
-            self.mlp = nn.Sequential(nn.Linear(self.dim_z, 1024), nn.ReLU(),
+            self.mlp = nn.Sequential(nn.Linear(self.dim_z, 1024), nn.ReLU(),  # TODO dropout
                                      nn.Linear(1024, 1024), nn.ReLU(),
-                                     nn.Linear(1024, int(np.prod(self.cnn_input_shape))))
+                                     nn.Linear(1024, int(np.prod(self.cnn_input_shape))))  # TODO add last ReLU?
         elif 'speccnn8l1' in self.architecture:
             if spectrogram_input_size == (257, 347):
                 self.cnn_input_shape = (1024, 3, 4)
-                self.mlp = nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape)))
+                self.mlp = nn.Sequential(nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape))),
+                                         #nn.ReLU(),  # This ReLU leads very bad generalization... why???
+                                         nn.Dropout(self.fc_dropout))
             else:
                 assert NotImplementedError()
         else:
@@ -150,7 +153,8 @@ class SpectrogramCNN(nn.Module):
                                         nn.Tanh()
                                         )
 
-        elif self.architecture == 'speccnn8l1':  # 1.8 GB (RAM) ; 0.36 GMultAdd  (batch 256)
+        elif self.architecture == 'speccnn8l1'\
+            or self.architecture == 'speccnn8l1_bn':  # 1.8 GB (RAM) ; 0.36 GMultAdd  (batch 256)
             ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
