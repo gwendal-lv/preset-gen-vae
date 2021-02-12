@@ -19,7 +19,7 @@ from utils.config import _Config
 
 if __name__ == "__main__":
 
-    if False:  # True to erase config from config.py, False to erase custom config given below
+    if True:  # True to erase config from config.py, False to erase custom config given below
         model_config = config.model
     else:
         model_config = _Config
