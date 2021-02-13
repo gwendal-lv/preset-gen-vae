@@ -147,12 +147,13 @@ class PresetDatabase:
     def _get_presets_folder():
         return pathlib.Path(__file__).parent.absolute().joinpath('dexed_presets')
 
-    def write_all_presets_to_files(self):
+    def write_all_presets_to_files(self, verbose=True):
         """ Write all presets' parameter values to separate pickled files, for multi-processed multi-worker
         DataLoader. File names are presetXXXXXX_params.pickle where XXXXXX is the preset UID (it is not
         its row index in the SQLite database).
 
-        Presets' names will be written to presetXXXXXX_name.txt
+        Presets' names will be written to presetXXXXXX_name.txt,
+        and comma-separated labels to presetXXXXXX_labels.txt
 
         All files will be written to ./dexed_presets/ """
         presets_folder = self._get_presets_folder()
@@ -160,14 +161,17 @@ class PresetDatabase:
             os.makedirs(presets_folder)
         for i in range(len(self.presets_mat)):
             preset_UID = self.all_presets_df.iloc[i]['index_preset']
-            preset_name = self.all_presets_df.iloc[i]['name']
             param_values = self.presets_mat[i, :]
             base_name = "preset{:06d}_".format(preset_UID)
             # ((un-)pickling has been done far too many times for these presets... could have been optimized)
             with open(presets_folder.joinpath(base_name + "params.pickle"), 'wb') as f:
                 pickle.dump(param_values, f)
             with open(presets_folder.joinpath(base_name + "name.txt"), 'w') as f:
-                f.write(preset_name)
+                f.write(self.all_presets_df.iloc[i]['name'])
+            with open(presets_folder.joinpath(base_name + "labels.txt"), 'w') as f:
+                f.write(self.all_presets_df.iloc[i]['labels'])
+        if verbose:
+            print("[dexed.PresetDatabase] Params, names and labels from SQLite DB written as .pickle and .txt files")
 
     @staticmethod
     def get_preset_params_values_from_file(preset_UID):
@@ -180,6 +184,14 @@ class PresetDatabase:
                   .joinpath( "preset{:06d}_name.txt".format(preset_UID)), 'r') as f:
             name = f.read()
         return name
+
+    @staticmethod
+    def get_preset_labels_from_file(preset_UID):
+        """ Return the preset labels as a list of strings. """
+        with open(PresetDatabase._get_presets_folder()
+                  .joinpath("preset{:06d}_labels.txt".format(preset_UID)), 'r') as f:
+            labels = f.read()
+        return labels.split(',')
 
 
 class Dexed:
@@ -341,7 +353,7 @@ class Dexed:
                 return 8
             elif (param_index % 22) == (44 % 22):  # OPx Switch (off/on)
                 return 2
-            else:  # all other are considered non-discrete
+            else:  # all other are considered non-discrete  # TODO return 100
                 return -1
         else:  # all other are considered non-discrete
             return -1
@@ -355,6 +367,7 @@ if __name__ == "__main__":
     dexed_db = PresetDatabase()
     print("{} (loaded in {:.1f}s)".format(dexed_db, time.time() - t0))
     names = dexed_db.get_param_names()
+    print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
 
     if False:
         # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****

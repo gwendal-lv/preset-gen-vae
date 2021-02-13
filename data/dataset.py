@@ -130,6 +130,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                           / ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)
         elif self.spectrogram_normalization == 'mean_std':
             spectrogram = (spectrogram - self.spec_stats['mean']) / self.spec_stats['std']
+        # TODO labels pytorch array
         # Tuple output. Warning: torch.from_numpy does not copy values
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
@@ -232,7 +233,8 @@ class DexedDataset(PresetDataset):
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
-                 algos=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True
+                 algos=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
+                 check_constrains_consistency=True
                  ):
         """
         Allows access to Dexed preset values and names, and generates spectrograms and corresponding
@@ -240,14 +242,19 @@ class DexedDataset(PresetDataset):
         learnable params). Only Dexed-specific ctor args are described - see base PresetDataset class.
 
         :param algos: List. Can be used to limit the DX7 algorithms included in this dataset. Set to None
-        to use all available algorithms
+            to use all available algorithms
         :param constant_filter_and_tune_params: if True, the main filter and the main tune settings are default
         :param prevent_SH_LFO: if True, replaces the SH random LFO by a square-wave deterministic LFO
+        :param check_constrains_consistency: Set to False when this dataset instance is used to pre-render
+            audio files
+        # TODO select by labels (et mettre du code dans la classe mère le + possible...)
         """
         super().__init__(note_duration, n_fft, fft_hop, midi_note, midi_velocity, n_mel_bins, mel_fmin, mel_fmax,
                          normalize_audio, spectrogram_min_dB, spectrogram_normalization)
         self.prevent_SH_LFO = prevent_SH_LFO
         self.constant_filter_and_tune_params = constant_filter_and_tune_params
+        if check_constrains_consistency:
+            assert self.check_audio_render_constraints_file()  # pre-rendered audio constraints consistency
         self.algos = algos if algos is not None else []
         # - - - Full SQLite DB read and temp storage in np arrays
         dexed_db = dexed.PresetDatabase()
@@ -290,7 +297,11 @@ class DexedDataset(PresetDataset):
         return preset_params
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
-        """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate. """
+        """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate.
+
+        :param preset_params: Constrained preset parameters (constraints from this class ctor args must have
+            been applied before passing preset_params).
+        """
         # reload the VST to prevent hanging notes/sounds
         dexed_renderer = dexed.Dexed(midi_note_duration_s=self.note_duration[0],
                                      render_duration_s=self.note_duration[0] + self.note_duration[1])
@@ -310,21 +321,39 @@ class DexedDataset(PresetDataset):
         return soundfile.read(DexedDataset.get_wav_file_path(preset_UID, midi_note, midi_velocity))
 
     def generate_wav_files(self):
-        """ Reads all presets from .pickle and .txt files
-        (see dexed.PresetDatabase.write_all_presets_to_files(...)) and renders them
-         using attributes of this class (midi note, normalization, etc...)
+        """ Reads all presets (names, param values, and labels) from .pickle and .txt files
+         (see dexed.PresetDatabase.write_all_presets_to_files(...)) and renders them
+         using attributes and constraints of this class (midi note, normalization, etc...)
 
-         Floating-point .wav files will be stored in dexed presets' folder (see synth/dexed.py) """
+         Floating-point .wav files will be stored in dexed presets' folder (see synth/dexed.py)
+
+         Also writes a audio_render_constraints.json file that should be checked when loading data.
+         """
         midi_note, midi_velocity = self.midi_note, self.midi_velocity
         for i in range(len(self)):   # TODO full dataset
             preset_UID = self.valid_preset_UIDs[i]
-            preset_params = self.get_preset_params(preset_UID)
+            preset_params = self.get_preset_params(preset_UID)  # Constrained params
             x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)  # Re-Loads the VST
             soundfile.write(self.get_wav_file_path(preset_UID, midi_note, midi_velocity),
                             x_wav, Fs, subtype='FLOAT')
             if i % 5000 == 0:
                 print("Writing .wav files... ({}/{})".format(i, len(self)))
         print("Finished writing {} .wav files".format(len(self)))
+
+    def write_audio_render_constraints_file(self):
+        file_path = dexed.PresetDatabase._get_presets_folder().joinpath("audio_render_constraints_file.json")
+        with open(file_path, 'w') as f:
+            json.dump({'constant_filter_and_tune_params': self.constant_filter_and_tune_params,
+                       'prevent_SH_LFO': self.prevent_SH_LFO}, f)
+
+    def check_audio_render_constraints_file(self):
+        """ Returns True if the constraints used to pre-rendered audio are the same as this instance constraints
+        (S&H locked, filter/tune general params, ...) """
+        file_path = dexed.PresetDatabase._get_presets_folder().joinpath("audio_render_constraints_file.json")
+        with open(file_path, 'r') as f:
+            constraints = json.load(f)
+            return constraints['constant_filter_and_tune_params'] == self.constant_filter_and_tune_params\
+                and constraints['prevent_SH_LFO'] == self.prevent_SH_LFO
 
 
 
@@ -342,9 +371,12 @@ if __name__ == "__main__":
     dexed_dataset = DexedDataset(note_duration=config.model.note_duration,
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
                                  n_mel_bins=config.model.mel_bins,
-                                 spectrogram_normalization=None,  # No normalization, to compute stats
-                                 spectrogram_min_dB=config.model.spectrogram_min_dB)
+                                 spectrogram_normalization=None,  # No normalization: we want to compute stats
+                                 spectrogram_min_dB=config.model.spectrogram_min_dB,
+                                 check_constrains_consistency=False)
     print(dexed_dataset)
+
+    dexed_dataset.write_audio_render_constraints_file()
 
     if regenerate_wav:
         # WRITE ALL WAV FILES (approx. 13Go for 5.0s audio)
