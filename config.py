@@ -17,7 +17,7 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "SpecVAE1"
-model.run_name = '07-3_NEW_BASE'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '08_harm_only'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -35,8 +35,10 @@ model.dim_z = 256
 # Modeling of synth controls probability distributions
 model.controls_losses = 'none'  # Gaussian-only, or Gaussian for continuous and Categorical for discrete
 # Synth used - please include indication on the sub-dataset used
-model.synth = 'dexed*'
-model.dataset = ('full',)  # List of flags/values to describe the dataset to be used
+model.synth = 'dexed*_harm'
+# flags/values to describe the dataset to be used
+model.dataset_labels = ['harmonic']  # list of labels, or None to use all available labels
+model.dataset_synth_args = None  # Dexed: Preset algos. Other: ...?
 # TODO learnable params count into hyper-parameters - then start SpecVAE2 folder
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory

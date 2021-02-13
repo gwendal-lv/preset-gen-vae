@@ -10,6 +10,7 @@ import pandas as pd
 from multiprocessing import Lock
 import time
 import json
+import itertools
 import torch
 import torch.nn as nn
 import torch.utils
@@ -135,7 +136,8 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
             torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
-            torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32)  # TODO add labels
+            torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32), \
+            self.get_labels_tensor(preset_UID)
 
     @abstractmethod
     def get_preset_params(self, preset_UID):
@@ -146,6 +148,24 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     def get_param_tensor_size(self):
         """ Returns the length of the second tensor returned by this dataset. """
         return len(self.learnable_params_idx)
+
+    def get_labels_tensor(self, preset_UID):
+        """ Returns a tensor of torch.int8 zeros and ones - each value is 1 if the preset is tagged with the
+        corresponding label """
+        return torch.tensor([1], dtype=torch.int8)  # 'NoLabel' is the only default label
+
+    def get_labels_name(self, preset_UID):
+        """ Returns the list of string labels assigned to a preset """
+        return ['NoLabel']  # Default: all presets are tagged with this dummy label. Implement in concrete class
+
+    @property
+    def available_labels_names(self):
+        """ Returns a list of string description of labels. """
+        return ['NoLabel']  # this dataset allows no label
+
+    @property
+    def labels_count(self):
+        return len(self.available_labels_name)
 
     @staticmethod
     @abstractmethod
@@ -158,7 +178,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
 
     def get_spectrogram_tensor_size(self):
         """ Returns the size of the first tensor (2D image) returned by this dataset. """
-        dummy_spectrogram, _, _ = self.__getitem__(0)
+        dummy_spectrogram, _, _, _ = self.__getitem__(0)
         return dummy_spectrogram.size()
 
     @staticmethod
@@ -233,7 +253,7 @@ class DexedDataset(PresetDataset):
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
-                 algos=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
+                 algos=None, restrict_to_labels=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
                  check_constrains_consistency=True
                  ):
         """
@@ -241,13 +261,17 @@ class DexedDataset(PresetDataset):
         parameters values. Can manage a reduced number of synth parameters (using default values for non-
         learnable params). Only Dexed-specific ctor args are described - see base PresetDataset class.
 
+        It uses both the SQLite DB (through dexed.PresetDatabase) and the pre-written files extracted from
+        the DB (see dexed.PresetDatabase.write_all_presets_to_files(...)).
+
         :param algos: List. Can be used to limit the DX7 algorithms included in this dataset. Set to None
             to use all available algorithms
+        :param restrict_to_labels: List of strings. If not None, presets of this dataset will be selected such
+            that they are tagged with at least one of the given labels.
         :param constant_filter_and_tune_params: if True, the main filter and the main tune settings are default
         :param prevent_SH_LFO: if True, replaces the SH random LFO by a square-wave deterministic LFO
         :param check_constrains_consistency: Set to False when this dataset instance is used to pre-render
             audio files
-        # TODO select by labels (et mettre du code dans la classe mère le + possible...)
         """
         super().__init__(note_duration, n_fft, fft_hop, midi_note, midi_velocity, n_mel_bins, mel_fmin, mel_fmax,
                          normalize_audio, spectrogram_min_dB, spectrogram_normalization)
@@ -256,7 +280,8 @@ class DexedDataset(PresetDataset):
         if check_constrains_consistency:
             assert self.check_audio_render_constraints_file()  # pre-rendered audio constraints consistency
         self.algos = algos if algos is not None else []
-        # - - - Full SQLite DB read and temp storage in np arrays
+        self.restrict_to_labels = restrict_to_labels
+        # - - - Full SQLite DB read and temp storage in np arrays - - -
         dexed_db = dexed.PresetDatabase()
         self.total_nb_presets = dexed_db.presets_mat.shape[0]
         self.total_nb_params = dexed_db.presets_mat.shape[1]
@@ -267,7 +292,8 @@ class DexedDataset(PresetDataset):
         # All oscillators are always ON (see dexed db exploration notebook)
         for col in [44, 66, 88, 110, 132, 154]:
             self.learnable_params_idx.remove(col)
-        # - - - Valid presets - UIDs of presets, and not their database row index
+        # - - - Valid presets - UIDs of presets, and not their database row index - - -
+        # Select valid presets by algorithm
         if len(self.algos) == 0:  # All presets are valid
             self.valid_preset_UIDs = dexed_db.all_presets_df["index_preset"].values
         else:
@@ -278,7 +304,11 @@ class DexedDataset(PresetDataset):
                 valid_presets_row_indexes += dexed_db.get_preset_indexes_for_algorithm(algo)
             self.valid_preset_UIDs = dexed_db.all_presets_df\
                 .iloc[valid_presets_row_indexes]['index_preset'].values
-        # DB class deleted (we need a low memory usage for multi-process dataloaders)
+        # Select valid presets by label. We build a list of list-indexes to remove
+        if self.restrict_to_labels is not None:
+            self.valid_preset_UIDs = [uid for uid in self.valid_preset_UIDs
+                                      if any([self.is_label_included(l) for l in self.get_labels_name(uid)])]
+        # - - - DB class deleted (we need a low memory usage for multi-process dataloaders) - - -
         del dexed_db
 
     @property
@@ -295,6 +325,26 @@ class DexedDataset(PresetDataset):
         if self.prevent_SH_LFO:
             dexed.Dexed.prevent_SH_LFO_(preset_params)
         return preset_params
+
+    def is_label_included(self, label):
+        """ Returns True if the label belongs to the restricted labels list. """
+        if self.restrict_to_labels is None:
+            return True
+        else:
+            return any([label == l_ for l_ in self.restrict_to_labels])
+
+    def get_labels_tensor(self, preset_UID):  # TODO Overrides parent abstract method
+        """ Returns a tensor of torch.int8 zeros and ones - each value is 1 if the preset is tagged with the
+        corresponding label """
+        return torch.tensor([1], dtype=torch.int8)  # 'NoLabel' is the only default label
+
+    def get_labels_name(self, preset_UID):  # Overrides parent abstract method
+        return dexed.PresetDatabase.get_preset_labels_from_file(preset_UID)
+
+    @property
+    def available_labels_names(self):  # Overrides parent abstract method
+        """ Returns a tuple of string description of labels. """
+        return dexed.PresetDatabase.get_available_labels()
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
         """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate.

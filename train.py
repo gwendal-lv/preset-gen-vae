@@ -54,7 +54,9 @@ def train_config():
 
 
     # ========== Datasets and DataLoaders ==========
-    full_dataset = data.dataset.DexedDataset(** data.dataset.model_config_to_dataset_kwargs(config.model))
+    full_dataset = data.dataset.DexedDataset(** data.dataset.model_config_to_dataset_kwargs(config.model),
+                                             algos=config.model.dataset_synth_args,
+                                             restrict_to_labels=config.model.dataset_labels)
     # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
     dataset = utils.data.random_split(full_dataset, config.train.datasets_proportions, random_gen_seed=0)
     dataloader = dict()

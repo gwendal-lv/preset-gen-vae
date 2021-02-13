@@ -153,7 +153,9 @@ class PresetDatabase:
         its row index in the SQLite database).
 
         Presets' names will be written to presetXXXXXX_name.txt,
-        and comma-separated labels to presetXXXXXX_labels.txt
+        and comma-separated labels to presetXXXXXX_labels.txt.
+
+        Performs consistency checks (e.g. labels, ...). TODO implement all consistency checks
 
         All files will be written to ./dexed_presets/ """
         presets_folder = self._get_presets_folder()
@@ -169,7 +171,12 @@ class PresetDatabase:
             with open(presets_folder.joinpath(base_name + "name.txt"), 'w') as f:
                 f.write(self.all_presets_df.iloc[i]['name'])
             with open(presets_folder.joinpath(base_name + "labels.txt"), 'w') as f:
-                f.write(self.all_presets_df.iloc[i]['labels'])
+                labels = self.all_presets_df.iloc[i]['labels']
+                labels_list = labels.split(',')
+                for l in labels_list:
+                    if not any([l == l_ for l_ in self.get_available_labels()]):  # Checks if any is True
+                        raise ValueError("Label '{}' should not be available in self.all_presets_df".format(l))
+                f.write(labels)
         if verbose:
             print("[dexed.PresetDatabase] Params, names and labels from SQLite DB written as .pickle and .txt files")
 
@@ -184,6 +191,10 @@ class PresetDatabase:
                   .joinpath( "preset{:06d}_name.txt".format(preset_UID)), 'r') as f:
             name = f.read()
         return name
+
+    @staticmethod
+    def get_available_labels():
+        return 'harmonic', 'percussive', 'sfx'
 
     @staticmethod
     def get_preset_labels_from_file(preset_UID):
@@ -367,9 +378,9 @@ if __name__ == "__main__":
     dexed_db = PresetDatabase()
     print("{} (loaded in {:.1f}s)".format(dexed_db, time.time() - t0))
     names = dexed_db.get_param_names()
-    print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
+    #print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
 
-    if False:
+    if True:
         # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****
         # Approx. 244Mo (yep, the SQLite DB is much lighter...)
         dexed_db.write_all_presets_to_files()
