@@ -9,6 +9,9 @@ def random_split(full_dataset, datasets_proportions, random_gen_seed=0):
      of integer lengths as input.
 
      Returns a dict of 3 sub-datasets with keys 'train', 'validation' and 'test'. """
+    # TODO arg to choose the current k-fold
+    # TODO test set must *always* remain the same, for a given full_dataset
+    #    (use a random split first (always the same seed) then a deterministic split for k-fold?)
     assert len(datasets_proportions) == 3
     sub_dataset_lengths = [int(np.floor(r * len(full_dataset))) for r in datasets_proportions]
     sub_dataset_lengths[2] = len(full_dataset) - sub_dataset_lengths[0] - sub_dataset_lengths[1]

@@ -43,18 +43,25 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.train_config = train_config
         self.resume_from_checkpoint = (train_config.start_epoch > 0)
         self.hyper_params = dict()
-        self.hyper_params['synth'] = self.model_config.synth
-        self.hyper_params['z_dim'] = self.model_config.dim_z
-        self.hyper_params['encarch'] = self.model_config.encoder_architecture
-        self.hyper_params['contloss'] = self.model_config.controls_losses
-        self.hyper_params['mels'] = self.model_config.mel_bins
-        self.hyper_params['mindB'] = self.model_config.spectrogram_min_dB
+        # General and dataset hparams
         self.hyper_params['batchsz'] = self.train_config.minibatch_size
+        self.hyper_params['kfold'] = self.train_config.current_k_fold
         self.hyper_params['wdecay'] = self.train_config.weight_decay
         self.hyper_params['fcdrop'] = self.train_config.fc_dropout
-        # TODO all loss types in hparams
+        self.hyper_params['synth'] = self.model_config.synth
+        # Latent space hparams
+        self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['latloss'] = self.train_config.latent_loss
+        # Synth controls regression
+        self.hyper_params['controls'] = self.model_config.synth_params_count
+        self.hyper_params['contloss'] = self.model_config.controls_losses
+        # Auto-Encoder hparams
+        self.hyper_params['encarch'] = self.model_config.encoder_architecture
         self.hyper_params['recloss'] = self.train_config.ae_reconstruction_loss
+        self.hyper_params['mels'] = self.model_config.mel_bins
+        self.hyper_params['mindB'] = self.model_config.spectrogram_min_dB
+        self.hyper_params['melfmin'] = self.model_config.mel_f_limits[0]
+        self.hyper_params['melfmax'] = self.model_config.mel_f_limits[1]
         # TODO hparam domain discrete
 
     def init_hparams_and_metrics(self, metrics):

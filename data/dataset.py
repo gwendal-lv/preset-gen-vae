@@ -145,7 +145,8 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         depends on the synth (some params may be locked or unused). """
         pass
 
-    def get_param_tensor_size(self):
+    @property
+    def learnable_params_count(self):
         """ Returns the length of the second tensor returned by this dataset. """
         return len(self.learnable_params_idx)
 

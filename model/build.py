@@ -3,7 +3,7 @@ Utility functions for building a new model (using only config from config.py),
 or for building a previously trained model.
 """
 
-from model import VAE, encoder, decoder
+from model import VAE, encoder, decoder, extendedAE
 
 
 def build_ae_model(model_config, train_config):
@@ -22,6 +22,17 @@ def build_ae_model(model_config, train_config):
                                                model_config.spectrogram_size, train_config.fc_dropout)
     ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model)  # Not parallelized yet
     return encoder_model, decoder_model, ae_model
+
+
+def build_extended_ae_model(model_config, train_config):
+    encoder_model, decoder_model, ae_model = build_ae_model(model_config, train_config)
+    if model_config.params_regression == 'mlp':
+        extended_ae_model = extendedAE.MLPExtendedAE(ae_model, model_config.params_regression_architecture,
+                                                     model_config.dim_z, model_config.synth_params_count,
+                                                     train_config.fc_dropout)
+    else:
+        raise NotImplementedError()
+    return encoder_model, decoder_model, ae_model, extended_ae_model
 
 
 def _is_attr_equal(attr1, attr2):
@@ -60,3 +71,17 @@ def check_configs_on_resume_from_checkpoint(new_model_config, new_train_config, 
             raise ValueError("Train attribute '{}' is different in the new config.py ({}) and the old config.json ({})"
                              .format(attr, new_train_config.__dict__[attr], prev_config[attr]))
 
+
+# Model Build tests - see also params_regression.ipynb
+if __name__ == "__main__":
+
+    import sys
+    import pathlib  # Dirty path trick to import config.py from project root dir
+    sys.path.append(pathlib.Path(__file__).parent.parent)
+    import config
+
+    # Manual config changes (for test purposes only)
+    config.model.synth_params_count = 144
+
+    _encoder_model, _decoder_model, _ae_model, _extended_ae_model \
+        = build_extended_ae_model(config.model, config.train)

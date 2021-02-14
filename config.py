@@ -16,15 +16,18 @@ from utils.config import _Config  # Empty class
 
 
 model = _Config()
-model.name = "SpecVAE1"
-model.run_name = '08_harm_only'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "ExtVAE0"
+model.run_name = '01_newsched'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
+model.params_regression = 'mlp'  # Parameters regression model
+model.params_regression_architecture = '3l1024'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
 model.mel_bins = 257  # -1 disables Mel-scale spectrogram. Try: 257, 513, ...
+model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO implement
 model.spectrogram_min_dB = -120.0
 # Possible spectrogram sizes:
 # (513, 433): audio 5.0s, fft size 1024, fft hop 256
@@ -33,13 +36,13 @@ model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from
 # Latent space dimension
 model.dim_z = 256
 # Modeling of synth controls probability distributions
-model.controls_losses = 'none'  # Gaussian-only, or Gaussian for continuous and Categorical for discrete
+model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
 # Synth used - please include indication on the sub-dataset used
 model.synth = 'dexed*_harm'
+model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset TODO implement
 # flags/values to describe the dataset to be used
 model.dataset_labels = ['harmonic']  # list of labels, or None to use all available labels
 model.dataset_synth_args = None  # Dexed: Preset algos. Other: ...?
-# TODO learnable params count into hyper-parameters - then start SpecVAE2 folder
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -48,7 +51,9 @@ train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
 train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
+train.k_folds = 5  # TODO implement
+train.current_k_fold = 1  # TODO implement
+train.start_epoch = 136  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 train.n_epochs = 200  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
@@ -69,7 +74,8 @@ train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
 train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
-train.scheduler_loss = 'ReconsLoss'  # Possible values: 'VAELoss' (total), 'ReconsLoss'
+# Possible values: 'VAELoss' (total), 'ReconsLoss', 'ContLoss'... All required losses will be summed
+train.scheduler_loss = ('ReconsLoss', 'ContLoss')
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 10
 train.scheduler_threshold = 1e-3

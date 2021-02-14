@@ -37,27 +37,17 @@ import utils.figures
 def train_config():
     """ Performs a full training run, as described by parameters in config.py.
 
-     Some attributes from config.py might be dynamically changed by train_queue.py - so they
-     can be different from what's currently written in config.py. """
-
-
-    # ========== Logger init (required to load from checkpoint) and Config check ==========
-    root_path = Path(__file__).resolve().parent
-    logger = logs.logger.RunLogger(root_path, config.model, config.train)
-    if logger.restart_from_checkpoint:
-        model.build.check_configs_on_resume_from_checkpoint(config.model, config.train,
-                                                            logger.get_previous_config_from_json())
-    if config.train.start_epoch > 0:  # Resume from checkpoint?
-        start_checkpoint = logs.logger.get_model_checkpoint(root_path, config.model, config.train.start_epoch - 1)
-    else:
-        start_checkpoint = None
+    Some attributes from config.py might be dynamically changed by train_queue.py (or this script,
+    after loading the datasets) - so they can be different from what's currently written in config.py. """
 
 
     # ========== Datasets and DataLoaders ==========
+    # Must be constructed first because dataset output sizes are required to automatically infer models output sizes
     full_dataset = data.dataset.DexedDataset(** data.dataset.model_config_to_dataset_kwargs(config.model),
                                              algos=config.model.dataset_synth_args,
                                              restrict_to_labels=config.model.dataset_labels)
     # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
+    # TODO "test" holdout dataset must *always* be the same - even when performing k-fold cross-validation
     dataset = utils.data.random_split(full_dataset, config.train.datasets_proportions, random_gen_seed=0)
     dataloader = dict()
     _debugger = False
@@ -73,17 +63,32 @@ def train_config():
     for dataset_type in dataset:
         # Persistent workers crash with pin_memory - but are more efficient than pinned memory
         dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
-                                              num_workers=num_workers, pin_memory=False, persistent_workers=True)
+                                              num_workers=num_workers, pin_memory=False,
+                                              persistent_workers=(num_workers > 0))
         if config.train.verbosity >= 1:
             print("Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}".format(dataset_type, len(dataset[dataset_type]), len(full_dataset), 100.0 * len(dataset[dataset_type])/len(full_dataset), num_workers))
+    # config.py modifications - number of learnable params depends on the synth and dataset arguments
+    config.model.synth_params_count = full_dataset.learnable_params_count
+
+
+    # ========== Logger init (required to load from checkpoint) and Config check ==========
+    root_path = Path(__file__).resolve().parent
+    logger = logs.logger.RunLogger(root_path, config.model, config.train)
+    if logger.restart_from_checkpoint:
+        model.build.check_configs_on_resume_from_checkpoint(config.model, config.train,
+                                                            logger.get_previous_config_from_json())
+    if config.train.start_epoch > 0:  # Resume from checkpoint?
+        start_checkpoint = logs.logger.get_model_checkpoint(root_path, config.model, config.train.start_epoch - 1)
+    else:
+        start_checkpoint = None
 
 
     # ========== Model definition ==========
-    _, _, ae_model = model.build.build_ae_model(config.model, config.train)
+    _, _, _, extended_ae_model = model.build.build_extended_ae_model(config.model, config.train)
     if start_checkpoint is not None:
-        ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
-    ae_model.eval()
-    logger.init_with_model(ae_model, config.model.input_tensor_size)  # model must not be parallel
+        extended_ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
+    extended_ae_model.eval()
+    logger.init_with_model(extended_ae_model, config.model.input_tensor_size)  # model must not be parallel
 
 
     # ========== Training devices (GPU(s) only) ==========
@@ -96,12 +101,12 @@ def train_config():
         if config.train.profiler_1_GPU:
             print("Using 1/{} GPUs for code profiling".format(torch.cuda.device_count()))
         device = 'cuda:0'
-        ae_model = ae_model.to(device)
-        ae_model_parallel = nn.DataParallel(ae_model, device_ids=[0])  # "Parallel" 1-GPU model
+        extended_ae_model = extended_ae_model.to(device)
+        model_parallel = nn.DataParallel(extended_ae_model, device_ids=[0])  # "Parallel" 1-GPU model
     else:
         device = torch.device('cuda')
-        ae_model.to(device)
-        ae_model_parallel = nn.DataParallel(ae_model)  # We use all available GPUs
+        extended_ae_model.to(device)
+        model_parallel = nn.DataParallel(extended_ae_model)  # We use all available GPUs
 
 
     # ========== Losses (criterion functions) ==========
@@ -111,6 +116,10 @@ def train_config():
         raise NotImplementedError()
     if config.train.latent_loss == 'Dkl':
         latent_criterion = model.loss.GaussianDkl(normalize=config.train.normalize_latent_loss)
+    else:
+        raise NotImplementedError()
+    if config.model.controls_losses == 'MSE':  # TODO multiple criteria (mse/categorical) or dedicated loss class
+        controls_criterion = nn.MSELoss(reduction='mean')
     else:
         raise NotImplementedError()
 
@@ -137,9 +146,9 @@ def train_config():
 
 
     # ========== Optimizer and Scheduler ==========
-    ae_model.train()
+    extended_ae_model.train()
     if config.train.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(ae_model.parameters(), lr=config.train.initial_learning_rate,
+        optimizer = torch.optim.Adam(extended_ae_model.parameters(), lr=config.train.initial_learning_rate,
                                      weight_decay=config.train.weight_decay, betas=config.train.adam_betas)
     else:
         raise NotImplementedError()
@@ -156,7 +165,7 @@ def train_config():
 
     # ========== PyTorch Profiling (optional) ==========
     is_profiled = config.train.profiler_args['enabled']
-    ae_model.is_profiled = is_profiled
+    extended_ae_model.is_profiled = is_profiled
 
 
     # ========== Model training epochs ==========
@@ -170,14 +179,14 @@ def train_config():
         # = = = = = Train all mini-batches (optional profiling) = = = = =
         # when profiling is disabled: true no-op context manager, and prof is None
         with utils.profile.get_optional_profiler(config.train.profiler_args) as prof:
-            ae_model.train()
+            model_parallel.train()
             dataloader_iter = iter(dataloader['train'])
             for i in range(len(dataloader['train'])):
                 with profiler.record_function("DATA_LOAD") if is_profiled else contextlib.nullcontext():
                     sample = next(dataloader_iter)
                     x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 optimizer.zero_grad()
-                z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
+                z_mu_logvar, z_sampled, x_out, u_out = model_parallel(x_in)
                 scalars['LatCorr/Train'].append(z_mu_logvar, z_sampled)
                 with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                     recons_loss = reconstruction_criterion(x_out, x_in)
@@ -185,8 +194,9 @@ def train_config():
                     lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    scalars['ContLoss/Train'].append(0.0)  # TODO
-                    (recons_loss + lat_loss).backward()  # Actual backpropagation is here
+                    cont_loss = controls_criterion(u_out, params_in)
+                    scalars['ContLoss/Train'].append(cont_loss)
+                    (recons_loss + lat_loss + cont_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
                 logger.on_minibatch_finished(i)
@@ -201,17 +211,18 @@ def train_config():
 
         # = = = = = Evaluation on validation dataset (no profiling) = = = = =
         with torch.no_grad():
-            ae_model_parallel.eval()  # BN stops running estimates
+            model_parallel.eval()  # BN stops running estimates
             for i, sample in enumerate(dataloader['validation']):
                 x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
-                z_mu_logvar, z_sampled, x_out = ae_model_parallel(x_in)
+                z_mu_logvar, z_sampled, x_out, u_out = model_parallel(x_in)
                 scalars['LatCorr/Valid'].append(z_mu_logvar, z_sampled)
                 recons_loss = reconstruction_criterion(x_out, x_in)
                 scalars['ReconsLoss/Valid'].append(recons_loss)
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                 scalars['LatLoss/Valid'].append(lat_loss)
-                lat_loss *= scalars['Sched/beta'].get(epoch)
-                scalars['ContLoss/Valid'].append(0.0)  # TODO
+                # lat_loss *= scalars['Sched/beta'].get(epoch)  # Useless without backprop
+                cont_loss = controls_criterion(u_out, params_in)
+                scalars['ContLoss/Valid'].append(cont_loss)
                 # tensorboard samples for minibatch 'eval' [0] only
                 if i == 0 and should_plot:
                     fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
@@ -220,7 +231,7 @@ def train_config():
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
         scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
         # Dynamic LR scheduling depends on validation performance. Loss for plateau-detection is chosen in config.py
-        scheduler.step(scalars['{}/Valid'.format(config.train.scheduler_loss)].get())
+        scheduler.step(sum([scalars['{}/Valid'.format(loss_name)].get() for loss_name in config.train.scheduler_loss]))
         scalars['Sched/LR'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
         early_stop = (optimizer.param_groups[0]['lr'] < config.train.early_stop_lr_threshold)  # Early stop?
 
@@ -241,7 +252,7 @@ def train_config():
 
         # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =
         if (epoch % config.train.save_period == 0) or (epoch == config.train.n_epochs-1) or early_stop:
-            logger.save_checkpoint(epoch, ae_model, optimizer, scheduler)
+            logger.save_checkpoint(epoch, extended_ae_model, optimizer, scheduler)
         logger.on_epoch_finished(epoch)
         if early_stop:
             print("[train.py] Training stopped early (final loss plateau)")
