@@ -10,6 +10,8 @@ import librosa.display
 
 import logs.metrics
 
+from synth import dexed
+
 
 def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info=False,
                       plot_error=False, error_magnitude=1.0, max_nb_specs=4, spec_ax_w=2.5, spec_ax_h=2.5,
@@ -112,7 +114,8 @@ def plot_spearman_correlation(latent_metric: logs.metrics.LatentMetric):
 
 def plot_synth_preset_param(ref_preset, inferred_preset=None,
                             preset_UID=None, learnable_param_indexes=None, param_names=None,
-                            show_non_learnable=True, plot_error=False):
+                            show_non_learnable=True, plot_error=False,
+                            synth_name=None):
     # TODO show params cardinality + figsize arg
     """ Plots reference parameters values of 1 preset, and their corresponding reconstructed values if given.
 
@@ -122,6 +125,7 @@ def plot_synth_preset_param(ref_preset, inferred_preset=None,
     :param param_names: List of parameter names of a full preset (optional)
     :param show_non_learnable: If False, non-learnable parameters won't be plotted.
     :param plot_error: If True, plot the difference between the reference and inferred preset (which must be provided)
+    :param synth_name: Synth name (e.g. "Dexed", ...) to add synth-specific elements (params cardinality, ...)
     """
     if not show_non_learnable:  # TODO
         raise NotImplementedError()
@@ -133,6 +137,17 @@ def plot_synth_preset_param(ref_preset, inferred_preset=None,
                              figsize=(0.13 * len(ref_preset), 4))  # TODO dynamic fig size
     if not isinstance(axes, np.ndarray):
         axes = [axes]  # Unsqueeze for easier looped logic
+    # Params cardinality: deduced from the synth arg (str)
+    if synth_name == 'Dexed':
+        # Gets cardinality of *all* params (including non-learnable)
+        params_cardinality = [dexed.Dexed.get_param_cardinality(i) for i in range(len(ref_preset))]
+        for i, cardinality in enumerate(params_cardinality):
+            if cardinality >= 2:
+                y_values = np.linspace(0.0, 1.0, num=cardinality, endpoint=True)
+                sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker='_',
+                                color='grey')
+    else:
+        raise NotImplementedError("Synth '{}' parameters cannot be displayed".format(synth_name))
     # For easier seaborn-based plot: we use a pandas dataframe
     df = pd.DataFrame({'param_idx': range(len(ref_preset)), 'ref_preset': ref_preset})
     if learnable_param_indexes is not None:
