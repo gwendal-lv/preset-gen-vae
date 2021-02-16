@@ -131,13 +131,17 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                           / ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)
         elif self.spectrogram_normalization == 'mean_std':
             spectrogram = (spectrogram - self.spec_stats['mean']) / self.spec_stats['std']
-        # TODO labels pytorch array
-        # Tuple output. Warning: torch.from_numpy does not copy values
+        # Tuple output. Warning: torch.from_numpy does not copy values (torch.tensor(...) ctor does)
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         return torch.unsqueeze(spectrogram, 0), \
             torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
             torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32), \
             self.get_labels_tensor(preset_UID)
+
+    @property
+    @abstractmethod
+    def total_nb_presets(self):
+        pass
 
     @abstractmethod
     def get_preset_params(self, preset_UID):
@@ -146,9 +150,21 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         pass
 
     @property
+    @abstractmethod
+    def preset_param_names(self):
+        """ Returns a List which contains the name of all parameters of presets (free and constrained). """
+        pass
+
+    @property
     def learnable_params_count(self):
         """ Returns the length of the second tensor returned by this dataset. """
         return len(self.learnable_params_idx)
+
+    @property
+    @abstractmethod
+    def total_nb_params(self):
+        """ Returns the total count of constrained and free parameters of a preset. """
+        pass
 
     def get_labels_tensor(self, preset_UID):
         """ Returns a tensor of torch.int8 zeros and ones - each value is 1 if the preset is tagged with the
@@ -284,13 +300,16 @@ class DexedDataset(PresetDataset):
         self.restrict_to_labels = restrict_to_labels
         # - - - Full SQLite DB read and temp storage in np arrays - - -
         dexed_db = dexed.PresetDatabase()
-        self.total_nb_presets = dexed_db.presets_mat.shape[0]
-        self.total_nb_params = dexed_db.presets_mat.shape[1]
+        self._total_nb_presets = dexed_db.presets_mat.shape[0]
+        self._total_nb_params = dexed_db.presets_mat.shape[1]
+        self._param_names = dexed_db.get_param_names()
         self.learnable_params_idx = list(range(0, dexed_db.presets_mat.shape[1]))
         if self.constant_filter_and_tune_params:  # (see dexed_db_explore.ipynb)
             for idx in [0, 1, 2, 3, 13]:
                 self.learnable_params_idx.remove(idx)
         # All oscillators are always ON (see dexed db exploration notebook)
+        # TODO this will change! to reduce the amount of learnable params
+        # TODO add operators ctor arg
         for col in [44, 66, 88, 110, 132, 154]:
             self.learnable_params_idx.remove(col)
         # - - - Valid presets - UIDs of presets, and not their database row index - - -
@@ -316,10 +335,30 @@ class DexedDataset(PresetDataset):
     def synth_name(self):  # Overrides parent abstract property
         return "Dexed"
 
+    def __str__(self):  # Overrides parent method
+        return "{}. Restricted to labels: {}".format(super().__str__(), self.restrict_to_labels)
+
+    @property
+    def total_nb_presets(self):  # Overrides parent abstract property
+        return self._total_nb_presets
+
+    @property
+    def total_nb_params(self):  # Overrides parent abstract property
+        return self._total_nb_params
+
+    @property
+    def preset_param_names(self):  # Overrides parent abstract property
+        return self._param_names
+
     def get_preset_params(self, preset_UID):  # Overrides parent abstract method
         """ Reads the requested preset params from a .pickle file and applies the constraints (constant values,
-        non-learnable params) of this class. """
+        non-learnable params) of this class.
+
+        :returns: A full preset (including non-learnable controls) """
         preset_params = dexed.PresetDatabase.get_preset_params_values_from_file(preset_UID)
+        return self._apply_preset_constraints(preset_params)
+
+    def _apply_preset_constraints(self, preset_params):
         dexed.Dexed.set_all_oscillators_on_(preset_params)
         if self.constant_filter_and_tune_params:
             dexed.Dexed.set_default_general_filter_and_tune_params_(preset_params)
@@ -359,6 +398,14 @@ class DexedDataset(PresetDataset):
         dexed_renderer.assign_preset(dexed.PresetDatabase.get_params_in_plugin_format(preset_params))
         x_wav = dexed_renderer.render_note(midi_note, midi_velocity, normalize=self.normalize_audio)
         return x_wav, dexed_renderer.Fs
+
+    def fill_preset(self, learnable_preset_params):
+        """ Given an incomplete vector of preset values (learnable controls only), returns the
+        corresponding full-size preset (including non-learnable controls). """
+        assert len(learnable_preset_params) == self.learnable_params_count
+        preset_params = -1.0 * np.ones((self.total_nb_params,))
+        preset_params[self.learnable_params_idx] = np.asarray(learnable_preset_params)
+        return self._apply_preset_constraints(preset_params)
 
     @staticmethod
     def get_wav_file_path(preset_UID, midi_note, midi_velocity):

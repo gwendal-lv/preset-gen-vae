@@ -19,9 +19,8 @@ Please write two lists of dicts, such that:
 - (model|train)_config_mods contains the modifications applied to config.model and config.train, resp.
 - each list index corresponds to a training run
 - each dict key corresponds to an attribute of config.model.* or config.train.*. Empty dict to indicate
-that no config modification should be performed
+      that no config modification should be performed
 """
-# TODO tester avec less_bn mais dropout un peu + fort (0.2 ?) pour garder mu_z bien homogène
 # Run 0
 model_config_mods.append({'run_name': '07-1_lessbn_fcdrop0.2'})
 train_config_mods.append({'fc_dropout': 0.2})

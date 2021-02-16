@@ -5,6 +5,7 @@ Utilities for plotting various figures (spectrograms, ...)
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 import librosa.display
 
 import logs.metrics
@@ -49,9 +50,9 @@ def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info
             if print_info:
                 if i == 0:
                     print("Dataset Spectrogram size: {}x{} = {} pixels\n"
-                          "Original raw audio: {} samples (22.050kHz, 5.0s))"
+                          "Original raw audio: {} samples (22.050kHz, 4.0s))"
                           .format(spectrogram.shape[0], spectrogram.shape[1],
-                                  spectrogram.shape[0] * spectrogram.shape[1], 5 * 22050))
+                                  spectrogram.shape[0] * spectrogram.shape[1], 4 * 22050))  # TODO don't hardcode
                 print("Dataset STFT Spectrogram UID={}: min={:.1f} max={:.1f} (normalized dB)"
                       .format(UID, spectrogram.min(), spectrogram.max()))
             if row == 0 and UID is not None:
@@ -108,3 +109,55 @@ def plot_spearman_correlation(latent_metric: logs.metrics.LatentMetric):
     fig.tight_layout()
     return fig, axes
 
+
+def plot_synth_preset_param(ref_preset, inferred_preset=None,
+                            preset_UID=None, learnable_param_indexes=None, param_names=None,
+                            show_non_learnable=True, plot_error=False):
+    # TODO show params cardinality + figsize arg
+    """ Plots reference parameters values of 1 preset, and their corresponding reconstructed values if given.
+
+    :param ref_preset: A ground-truth preset (must be full is learnable_param_idx is None)
+    :param inferred_preset: Reconstructed preset (optional)
+    :param learnable_param_indexes: If not None, non-learnable params will be grey-colored.
+    :param param_names: List of parameter names of a full preset (optional)
+    :param show_non_learnable: If False, non-learnable parameters won't be plotted.
+    :param plot_error: If True, plot the difference between the reference and inferred preset (which must be provided)
+    """
+    if not show_non_learnable:  # TODO
+        raise NotImplementedError()
+    if plot_error:  # TODO
+        raise NotImplementedError()
+    if inferred_preset is not None:
+        assert len(ref_preset) == len(inferred_preset)
+    fig, axes = plt.subplots(1 if not plot_error else 2, 1,
+                             figsize=(0.13 * len(ref_preset), 4))  # TODO dynamic fig size
+    if not isinstance(axes, np.ndarray):
+        axes = [axes]  # Unsqueeze for easier looped logic
+    # For easier seaborn-based plot: we use a pandas dataframe
+    df = pd.DataFrame({'param_idx': range(len(ref_preset)), 'ref_preset': ref_preset})
+    if learnable_param_indexes is not None:
+        df['is_learnable'] = [(idx in learnable_param_indexes) for idx in range(len(ref_preset))]
+    else:
+        df['is_learnable'] = [True for idx in range(len(ref_preset))]
+    # Scatter plot for "faders" values
+    sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=axes[0],
+                    hue="is_learnable",
+                    palette=("blend:#BBB,#06D" if learnable_param_indexes is not None else "deep"))
+    if inferred_preset is not None:
+        df['inferred_preset'] = inferred_preset
+        sns.scatterplot(data=df, x='param_idx', y='inferred_preset', ax=axes[0],
+                        hue="is_learnable",
+                        palette=("blend:#BBB,#D60" if learnable_param_indexes is not None else "husl"))
+    axes[0].set_xticks(range(len(ref_preset)))
+    axes[0].set_xticklabels(['{}.{}'.format(idx, ('' if param_names is None else param_names[idx]))
+                             for idx in range(len(ref_preset))])
+    axes[0].set(xlabel='', ylabel='Param. value', xlim=[0-0.5, len(ref_preset)-0.5])
+    axes[0].get_legend().remove()
+    if preset_UID is not None:
+        axes[0].set_title("Preset UID={}".format(preset_UID))
+    plt.vlines(x=np.arange(len(ref_preset) + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+    # vertical "faders" separator lines
+    for tick in axes[0].get_xticklabels():
+        tick.set_rotation(90)
+    fig.tight_layout()
+    return fig, axes

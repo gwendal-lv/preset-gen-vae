@@ -41,7 +41,7 @@ model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Ca
 model.synth = 'dexed*_harm'
 model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset TODO implement
 # flags/values to describe the dataset to be used
-model.dataset_labels = ['harmonic']  # list of labels, or None to use all available labels
+model.dataset_labels = ('harmonic',)  # list of labels, or None to use all available labels
 model.dataset_synth_args = None  # Dexed: Preset algos. Other: ...?
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
@@ -53,7 +53,7 @@ train.minibatch_size = 256
 train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datasets sizes (total must be 1.0)
 train.k_folds = 5  # TODO implement
 train.current_k_fold = 1  # TODO implement
-train.start_epoch = 136  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
+train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 train.n_epochs = 200  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)

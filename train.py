@@ -8,16 +8,12 @@ with small modifications to the config (enqueued train runs).
 See train_queue.py for enqueued training runs
 """
 
-import sys
-import os
 from pathlib import Path
 import contextlib
-import importlib
 
 import mkl
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 import torch.optim
 from torch.autograd import profiler
 
@@ -28,7 +24,7 @@ import logs.logger
 import logs.metrics
 from logs.metrics import SimpleMetric, EpochMetric, LatentMetric
 import data.dataset
-import utils.data
+import data.build
 import utils.profile
 from utils.hparams import LinearDynamicParam
 import utils.figures
@@ -42,31 +38,10 @@ def train_config():
 
 
     # ========== Datasets and DataLoaders ==========
-    # Must be constructed first because dataset output sizes are required to automatically infer models output sizes
-    full_dataset = data.dataset.DexedDataset(** data.dataset.model_config_to_dataset_kwargs(config.model),
-                                             algos=config.model.dataset_synth_args,
-                                             restrict_to_labels=config.model.dataset_labels)
-    # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
-    # TODO "test" holdout dataset must *always* be the same - even when performing k-fold cross-validation
-    dataset = utils.data.random_split(full_dataset, config.train.datasets_proportions, random_gen_seed=0)
-    dataloader = dict()
-    _debugger = False
-    if config.train.profiler_args['enabled'] and config.train.profiler_args['use_cuda']:
-        num_workers = 0  # CUDA PyTorch profiler does not work with a multiprocess-dataloader
-    elif sys.gettrace() is not None:
-        _debugger = True
-        print("Debugger detected - num_workers=0 for all DataLoaders")
-        num_workers = 0  # PyCharm debug behaves badly with multiprocessing...
-    else:  # We should use an higher CPU count for real-time audio rendering
-        # 4*GPU count: optimal w/ light dataloader (e.g. (mel-)spectrogram computation)
-        num_workers = min(config.train.minibatch_size, torch.cuda.device_count() * 4)
-    for dataset_type in dataset:
-        # Persistent workers crash with pin_memory - but are more efficient than pinned memory
-        dataloader[dataset_type] = DataLoader(dataset[dataset_type], config.train.minibatch_size, shuffle=True,
-                                              num_workers=num_workers, pin_memory=False,
-                                              persistent_workers=(num_workers > 0))
-        if config.train.verbosity >= 1:
-            print("Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}".format(dataset_type, len(dataset[dataset_type]), len(full_dataset), 100.0 * len(dataset[dataset_type])/len(full_dataset), num_workers))
+    # Must be constructed first because dataset output sizes will be required to automatically infer models output sizes
+    full_dataset, dataset = data.build.get_full_and_split_datasets(config.model, config.train)
+    # dataset variable is a dict of 3 sub-datasets ('train', 'validation' and 'test')
+    dataloader = data.build.get_split_dataloaders(config.train, full_dataset, dataset)
     # config.py modifications - number of learnable params depends on the synth and dataset arguments
     config.model.synth_params_count = full_dataset.learnable_params_count
 
