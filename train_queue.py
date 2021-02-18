@@ -22,11 +22,11 @@ Please write two lists of dicts, such that:
       that no config modification should be performed
 """
 # Run 0
-model_config_mods.append({'run_name': '07-1_lessbn_fcdrop0.2'})
-train_config_mods.append({'fc_dropout': 0.2})
+model_config_mods.append({'run_name': '05_largercnn'})
+train_config_mods.append({})
 # Run 1
-model_config_mods.append({'run_name': '07-2_lessbn_fcdrop0.2'})
-train_config_mods.append({'fc_dropout': 0.2})
+model_config_mods.append({'run_name': '06_largercnn'})
+train_config_mods.append({})
 """
 # Run 2
 model_config_mods.append({'run_name': '06-1_adambeta0.8'})

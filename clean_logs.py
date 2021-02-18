@@ -19,14 +19,14 @@ from utils.config import _Config
 
 if __name__ == "__main__":
 
-    if True:  # True to erase config from config.py, False to erase custom config given below
+    if False:  # True to erase config from config.py, False to erase custom config given below
         model_config = config.model
     else:
         model_config = _Config
         model_config.logs_root_dir = "saved"
         # = = = = = Insert here model and run to be erased = = = = =
-        model_config.name = 'SpecVAE1'
-        model_config.run_name = '01_adambeta0.5'
+        model_config.name = 'ExtVAE0'
+        model_config.run_name = '07-1_lessbn_fcdrop0.2'
         # = = = = = Insert here model and run to be erased = = = = =
 
 

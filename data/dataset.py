@@ -81,16 +81,9 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         else:  # TODO do not hardcode Fs?
             self.spectrogram = utils.audio.MelSpectrogram(self.n_fft, self.fft_hop, spectrogram_min_dB,
                                                           self.n_mel_bins, 22050)
-        # try load spectrogram min/max/mean/std statistics
+        # spectrogram min/max/mean/std statistics: must be loaded after super() ctor (depend on child class args)
         self.spectrogram_normalization = spectrogram_normalization
-        try:
-            f = open(self._get_spectrogram_stats_file(), 'r')
-            self.spec_stats = json.load(f)
-        except IOError:
-            self.spec_stats = None
-            self.spectrogram_normalization = None  # Normalization disabled
-            print("[PresetDataset] Cannot open '{}' stats file.".format(self._get_spectrogram_stats_file()))
-            print("[PresetDataset] No pre-computed spectrogram stats can be found. No normalization will be performed")
+        self.spec_stats = None
 
     @property
     @abstractmethod
@@ -123,6 +116,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         # loading params and wav file TODO load labels
         preset_UID = self.valid_preset_UIDs[i]
         preset_params = self.get_preset_params(preset_UID)
+        # TODO multi-wav (multi MIDI note) loading
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
         # Spectrogram, or Mel-Spectrogram if requested
         spectrogram = self.spectrogram(x_wav)
@@ -133,6 +127,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
             spectrogram = (spectrogram - self.spec_stats['mean']) / self.spec_stats['std']
         # Tuple output. Warning: torch.from_numpy does not copy values (torch.tensor(...) ctor does)
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
+        # TODO multi-channel spectrograms with multiple MIDI notes (and velocities?)
         return torch.unsqueeze(spectrogram, 0), \
             torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
             torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32), \
@@ -184,14 +179,26 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     def labels_count(self):
         return len(self.available_labels_name)
 
-    @staticmethod
     @abstractmethod
-    def get_wav_file(preset_UID, midi_note, midi_velocity):
+    def get_wav_file(self, preset_UID, midi_note, midi_velocity):
         pass
 
     def _get_wav_file(self, preset_UID):
         """ Returns the preset_UID audio (numpy array). MIDI note and velocity of the note are the class defaults. """
+        # FIXME incompatible with future multi-MIDI notes input
         return self.get_wav_file(preset_UID, self.midi_note, self.midi_velocity)
+
+    def _load_spectrogram_stats(self):
+        """ To be called by the child class, after this parent class construction (because stats file path
+        depends on child class constructor arguments). """
+        try:
+            f = open(self._get_spectrogram_stats_file(), 'r')
+            self.spec_stats = json.load(f)
+        except IOError:
+            self.spec_stats = None
+            self.spectrogram_normalization = None  # Normalization disabled
+            print("[PresetDataset] Cannot open '{}' stats file.".format(self._get_spectrogram_stats_file()))
+            print("[PresetDataset] No pre-computed spectrogram stats can be found. No normalization will be performed")
 
     def get_spectrogram_tensor_size(self):
         """ Returns the size of the first tensor (2D image) returned by this dataset. """
@@ -233,6 +240,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         full_stats = {'UID': [], 'min': [], 'max': [], 'mean': [], 'var': []}
         for i in range(len(self)):
             # We use the exact same spectrogram as the dataloader will
+            # TODO multi-midi-notes spectrograms stats
             x_wav, Fs = self.get_wav_file(self.valid_preset_UIDs[i],
                                           self.midi_note, self.midi_velocity)
             assert Fs == 22050
@@ -270,7 +278,8 @@ class DexedDataset(PresetDataset):
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
-                 algos=None, restrict_to_labels=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
+                 algos=None, operators=None,
+                 restrict_to_labels=None, constant_filter_and_tune_params=True, prevent_SH_LFO=True,
                  check_constrains_consistency=True
                  ):
         """
@@ -283,6 +292,7 @@ class DexedDataset(PresetDataset):
 
         :param algos: List. Can be used to limit the DX7 algorithms included in this dataset. Set to None
             to use all available algorithms
+        :param operators: List of ints, or None. Enables the specified operators only, or all of them if None.
         :param restrict_to_labels: List of strings. If not None, presets of this dataset will be selected such
             that they are tagged with at least one of the given labels.
         :param constant_filter_and_tune_params: if True, the main filter and the main tune settings are default
@@ -297,16 +307,22 @@ class DexedDataset(PresetDataset):
         if check_constrains_consistency:
             assert self.check_audio_render_constraints_file()  # pre-rendered audio constraints consistency
         self.algos = algos if algos is not None else []
+        self._operators = operators if operators is not None else [1, 2, 3, 4, 5, 6]
         self.restrict_to_labels = restrict_to_labels
-        # - - - Full SQLite DB read and temp storage in np arrays - - -
+        # Full SQLite DB read and temp storage in np arrays
         dexed_db = dexed.PresetDatabase()
         self._total_nb_presets = dexed_db.presets_mat.shape[0]
         self._total_nb_params = dexed_db.presets_mat.shape[1]
         self._param_names = dexed_db.get_param_names()
+        # - - - Constraints on parameters, learnable parameters - - -
         self.learnable_params_idx = list(range(0, dexed_db.presets_mat.shape[1]))
         if self.constant_filter_and_tune_params:  # (see dexed_db_explore.ipynb)
             for idx in [0, 1, 2, 3, 13]:
                 self.learnable_params_idx.remove(idx)
+        for i_op in range(6):  # Search for disabled operators
+            if not (i_op+1) in self._operators:  # If disabled: we remove all corresponding learnable params
+                for idx in range(21):  # Don't remove the 22nd param (OP on/off selector) yet
+                    self.learnable_params_idx.remove(23 + 22*i_op + idx)  # idx 23 is the first param of op 1
         # All oscillators are always ON (see dexed db exploration notebook)
         # TODO this will change! to reduce the amount of learnable params
         # TODO add operators ctor arg
@@ -330,13 +346,16 @@ class DexedDataset(PresetDataset):
                                       if any([self.is_label_included(l) for l in self.get_labels_name(uid)])]
         # - - - DB class deleted (we need a low memory usage for multi-process dataloaders) - - -
         del dexed_db
+        # - - - Final initializations - - -
+        self._load_spectrogram_stats()  # Must be called after super() ctor
 
     @property
     def synth_name(self):  # Overrides parent abstract property
         return "Dexed"
 
     def __str__(self):  # Overrides parent method
-        return "{}. Restricted to labels: {}".format(super().__str__(), self.restrict_to_labels)
+        return "{}. Restricted to labels: {}. Enabled operators: {}".format(super().__str__(), self.restrict_to_labels,
+                                                                            self._operators)
 
     @property
     def total_nb_presets(self):  # Overrides parent abstract property
@@ -359,11 +378,15 @@ class DexedDataset(PresetDataset):
         return self._apply_preset_constraints(preset_params)
 
     def _apply_preset_constraints(self, preset_params):
+        # General constraints (constant params)
         dexed.Dexed.set_all_oscillators_on_(preset_params)
         if self.constant_filter_and_tune_params:
             dexed.Dexed.set_default_general_filter_and_tune_params_(preset_params)
         if self.prevent_SH_LFO:
             dexed.Dexed.prevent_SH_LFO_(preset_params)
+        # enable/disable operators
+        for op_i in range(6):
+            preset_params[44 + 22*op_i] = (1.0 if (op_i+1) in self._operators else 0.0)
         return preset_params
 
     def is_label_included(self, label):
@@ -401,22 +424,43 @@ class DexedDataset(PresetDataset):
 
     def fill_preset(self, learnable_preset_params):
         """ Given an incomplete vector of preset values (learnable controls only), returns the
-        corresponding full-size preset (including non-learnable controls). """
+        corresponding full-size preset (including non-learnable controls).
+        General parameters (e.g. main filter and transpose) will be set to their default value, and
+        non-learnable operator params (disabled operators) will be set to -0.1.
+
+        :param learnable_preset_params: Incomplete preset (learned params only)
+        """
         assert len(learnable_preset_params) == self.learnable_params_count
-        preset_params = -1.0 * np.ones((self.total_nb_params,))
+        preset_params = -0.1 * np.ones((self.total_nb_params,))  # TODO start from original preset
         preset_params[self.learnable_params_idx] = np.asarray(learnable_preset_params)
         return self._apply_preset_constraints(preset_params)
 
-    @staticmethod
-    def get_wav_file_path(preset_UID, midi_note, midi_velocity):
-        """ Returns the path of a wav (from dexed_presets folder). """
+    def _get_spectrogram_stats_file_stem(self):  # Overrides parent method
+        return super()._get_spectrogram_stats_file_stem() + self._operators_suffix
+
+    @property
+    def _operators_suffix(self):
+        """ Returns a suffix (to be used in files names) that describes enabled DX7 operators, as configured
+        in this dataset's constructor. Return an empty string if all operators are used. """
+        ops_suffix = ''
+        if self._operators != [1, 2, 3, 4, 5, 6]:
+            ops_suffix = '_op' + ''.join(['{}'.format(op) for op in self._operators])
+        return ops_suffix
+
+    def get_wav_file_path(self, preset_UID, midi_note, midi_velocity):
+        """ Returns the path of a wav (from dexed_presets folder). Operators"""
         presets_folder = dexed.PresetDatabase._get_presets_folder()
-        filename = "preset{:06d}_midi{:03d}vel{:03d}.wav".format(preset_UID, midi_note, midi_velocity)
+        filename = "preset{:06d}_midi{:03d}vel{:03d}{}.wav".format(preset_UID, midi_note, midi_velocity,
+                                                                   self._operators_suffix)
         return presets_folder.joinpath(filename)
 
-    @staticmethod
-    def get_wav_file(preset_UID, midi_note, midi_velocity):  # Overrides parent abstract method
-        return soundfile.read(DexedDataset.get_wav_file_path(preset_UID, midi_note, midi_velocity))
+    def get_wav_file(self, preset_UID, midi_note, midi_velocity):  # Overrides parent abstract method
+        file_path = self.get_wav_file_path(preset_UID, midi_note, midi_velocity)
+        try:
+            return soundfile.read(file_path)
+        except RuntimeError:
+            raise RuntimeError("[data/dataset.py] Can't open file {}. Please pre-render audio files for this "
+                               "dataset configuration.".format(file_path))
 
     def generate_wav_files(self):
         """ Reads all presets (names, param values, and labels) from .pickle and .txt files
@@ -427,6 +471,7 @@ class DexedDataset(PresetDataset):
 
          Also writes a audio_render_constraints.json file that should be checked when loading data.
          """
+        # TODO multiple midi notes generation
         midi_note, midi_velocity = self.midi_note, self.midi_velocity
         for i in range(len(self)):   # TODO full dataset
             preset_UID = self.valid_preset_UIDs[i]
@@ -436,6 +481,7 @@ class DexedDataset(PresetDataset):
                             x_wav, Fs, subtype='FLOAT')
             if i % 5000 == 0:
                 print("Writing .wav files... ({}/{})".format(i, len(self)))
+        self.write_audio_render_constraints_file()
         print("Finished writing {} .wav files".format(len(self)))
 
     def write_audio_render_constraints_file(self):
@@ -459,25 +505,30 @@ class DexedDataset(PresetDataset):
 if __name__ == "__main__":
 
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = False  # quite long (15min)
-    regenerate_spectrograms_stats = False  # approx 3 min
+    regenerate_wav = True  # quite long (15min, full dataset, 1 midi note)
+    regenerate_spectrograms_stats = True  # approx 3 min
 
     import sys
     sys.path.append(pathlib.Path(__file__).parent.parent)
     import config  # Dirty path trick to import config.py from project root dir
 
+    #operators = config.model.dataset_synth_args[1]  # Custom operators limitation?
+    operators = [1, 2, 3, 4]
+
+    # No label restriction, no normalization, etc...
+    # But: OPERATORS LIMITATIONS and DEFAULT PARAM CONSTRAINTS (main params (filter, transpose,...) are constant)
     dexed_dataset = DexedDataset(note_duration=config.model.note_duration,
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
                                  n_mel_bins=config.model.mel_bins,
                                  spectrogram_normalization=None,  # No normalization: we want to compute stats
+                                 algos=None, restrict_to_labels=None,
+                                 operators=operators,  # Operators limitation (config.py)
                                  spectrogram_min_dB=config.model.spectrogram_min_dB,
                                  check_constrains_consistency=False)
-    print(dexed_dataset)
-
-    dexed_dataset.write_audio_render_constraints_file()
+    #print(dexed_dataset)  # All files must be pre-rendered before printing
 
     if regenerate_wav:
-        # WRITE ALL WAV FILES (approx. 13Go for 5.0s audio)
+        # WRITE ALL WAV FILES (approx. 10.5Go for 4.0s audio, 1 midi note)
         dexed_dataset.generate_wav_files()
     if regenerate_spectrograms_stats:
         # whole-dataset stats (for proper normalization)

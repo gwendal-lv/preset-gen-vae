@@ -312,8 +312,26 @@ class Dexed:
 
     @staticmethod
     def set_all_oscillators_on_(preset_params):
-        """ Modifies some params in-place for the given numpy array """
+        """ Modifies some params of the given numpy array to ensure that all operators (oscillators) are ON.
+        Data is modified in place. """
         preset_params[[44, 66, 88, 110, 132, 154]] = np.asarray([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+
+    @staticmethod
+    def set_all_oscillators_off_(preset_params):
+        """ Modifies some params of the given numpy array to ensure that all operators (oscillators) are OFF.
+        Data is modified in place. """
+        preset_params[[44, 66, 88, 110, 132, 154]] = np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+    @staticmethod
+    def set_oscillators_on_(preset_params, operators_to_turn_on):
+        """ Modifies some params of the given numpy array to turn some operators ON. Data is modified in place.
+
+        :param preset_params: Numpy Array of preset parameters values.
+        :param operators_to_turn_on: List of integers in [1, 6]
+        """
+        Dexed.set_all_oscillators_off_(preset_params)
+        for op_number in operators_to_turn_on:
+            preset_params[44 + 22 * (op_number-1)] = 1.0
 
     def prevent_SH_LFO(self):
         """ If the LFO Wave is random S&H, transforms it into a square LFO wave to get deterministic
@@ -330,6 +348,27 @@ class Dexed:
             preset_params[12] = 4.0 / 5.0
 
     @staticmethod
+    def get_midi_key_related_param_indexes():
+        """ Returns a list of indexes of all DX7 parameters that apply a modulation depending on the MIDI key
+        (note and/or velocity) """
+        # (6. 'OSC KEY SYNC' (LFO) does NOT depend on the midi note (it syncs or not LFO phase on midi event).)
+        # All the KEY L/R stuff (with breakpoint at some MIDI note) effects are really dependant on the MIDI key.
+        # 36. breakpoint.
+        # 37/38: L/R scale (curve) depth.
+        # 39/40: L/R scale (=curve) type: +/-lin or +/-exp.
+        return [(36 + 22*i) for i in range(6)]\
+            + [(37 + 22*i) for i in range(6)] + [(38 + 22*i) for i in range(6)]\
+            + [(39 + 22*i) for i in range(6)] + [(40 + 22*i) for i in range(6)] \
+            + [(43 + 22 * i)for i in range(6)]
+
+    @staticmethod
+    def get_mod_wheel_related_param_indexes():
+        """ Returns a list of indexes of all DX7 parameters that influence sound depending on the MIDI
+         mod wheel. """
+        # OPx A MOD SENS + Pitch general mod sens
+        return [(42 + 22*i) for i in range(6)] + [14]
+
+    @staticmethod
     def get_param_cardinality(param_index):
         """ Returns the number of possible values for a given parameter, or -1 if the param
         is considered continuous (100 discrete values). """
@@ -343,7 +382,7 @@ class Dexed:
             return 2
         elif param_index == 12:  # LFO wave
             return 6
-        elif param_index == 14:  # pitch mode sensitivity
+        elif param_index == 14:  # pitch modulation sensitivity
             return 8
         elif param_index >= 23:  # oscillators (operators) params
             if (param_index % 22) == (32 % 22):  # OPx Mode (ratio/fixed)
@@ -358,7 +397,7 @@ class Dexed:
                 return 4
             elif (param_index % 22) == (41 % 22):  # OPx Rate Scaling
                 return 8
-            elif (param_index % 22) == (42 % 22):  # OPx A (amplitude?) mode sensitivity
+            elif (param_index % 22) == (42 % 22):  # OPx A modulation sensitivity
                 return 4
             elif (param_index % 22) == (43 % 22):  # OPx Key Velocity
                 return 8
