@@ -159,7 +159,7 @@ def train_config():
             for i in range(len(dataloader['train'])):
                 with profiler.record_function("DATA_LOAD") if is_profiled else contextlib.nullcontext():
                     sample = next(dataloader_iter)
-                    x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
+                    x_in, u_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 optimizer.zero_grad()
                 z_mu_logvar, z_sampled, x_out, u_out = model_parallel(x_in)
                 scalars['LatCorr/Train'].append(z_mu_logvar, z_sampled)
@@ -169,7 +169,7 @@ def train_config():
                     lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    cont_loss = controls_criterion(u_out, params_in)
+                    cont_loss = controls_criterion(u_out, u_in)
                     scalars['ContLoss/Train'].append(cont_loss)
                     (recons_loss + lat_loss + cont_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
@@ -187,8 +187,9 @@ def train_config():
         # = = = = = Evaluation on validation dataset (no profiling) = = = = =
         with torch.no_grad():
             model_parallel.eval()  # BN stops running estimates
+            u_error = torch.Tensor().to(device='cuda')  # Params inference error (Tensorboard plot)
             for i, sample in enumerate(dataloader['validation']):
-                x_in, params_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
+                x_in, u_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 z_mu_logvar, z_sampled, x_out, u_out = model_parallel(x_in)
                 scalars['LatCorr/Valid'].append(z_mu_logvar, z_sampled)
                 recons_loss = reconstruction_criterion(x_out, x_in)
@@ -196,7 +197,8 @@ def train_config():
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                 scalars['LatLoss/Valid'].append(lat_loss)
                 # lat_loss *= scalars['Sched/beta'].get(epoch)  # Useless without backprop
-                cont_loss = controls_criterion(u_out, params_in)
+                cont_loss = controls_criterion(u_out, u_in)
+                u_error = torch.cat([u_error, u_in - u_out])
                 scalars['ContLoss/Valid'].append(cont_loss)
                 # tensorboard samples for minibatch 'eval' [0] only
                 if i == 0 and should_plot:
@@ -218,6 +220,7 @@ def train_config():
             logger.tensorboard.add_figure('LatentMu', fig, epoch)
             fig, _ = utils.figures.plot_spearman_correlation(latent_metric=scalars['LatCorr/Valid'])
             logger.tensorboard.add_figure('LatentEntanglement', fig, epoch)
+            #fig, _ = utils.figures.  # TODO param error figure (+ transfer error Tensor to cpu)
         metrics['epochs'] = epoch + 1
         metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())

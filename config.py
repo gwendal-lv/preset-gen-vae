@@ -17,10 +17,10 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '05_todo'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '07_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
-model.encoder_architecture = 'speccnn8l1_2'
+model.encoder_architecture = 'speccnn8l1_bn'
 model.params_regression = 'mlp'  # Parameters regression model
 model.params_regression_architecture = '3l1024'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
