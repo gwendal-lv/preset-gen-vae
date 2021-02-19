@@ -101,26 +101,26 @@ class DexedDataset(PresetDataset):
         self._load_spectrogram_stats()  # Must be called after super() ctor
 
     @property
-    def synth_name(self):  # Overrides parent abstract property
+    def synth_name(self):
         return "Dexed"
 
-    def __str__(self):  # Overrides parent method
+    def __str__(self):
         return "{}. Restricted to labels: {}. Enabled operators: {}".format(super().__str__(), self.restrict_to_labels,
                                                                             self._operators)
 
     @property
-    def total_nb_presets(self):  # Overrides parent abstract property
+    def total_nb_presets(self):
         return self._total_nb_presets
 
     @property
-    def total_nb_params(self):  # Overrides parent abstract property
+    def total_nb_params(self):
         return self._total_nb_params
 
     @property
-    def preset_param_names(self):  # Overrides parent abstract property
+    def preset_param_names(self):
         return self._param_names
 
-    def get_preset_params(self, preset_UID):  # Overrides parent abstract method
+    def get_preset_params(self, preset_UID):
         """ Reads the requested preset params from a .pickle file and applies the constraints (constant values,
         non-learnable params) of this class.
 
@@ -147,16 +147,16 @@ class DexedDataset(PresetDataset):
         else:
             return any([label == l_ for l_ in self.restrict_to_labels])
 
-    def get_labels_tensor(self, preset_UID):  # TODO Overrides parent abstract method
+    def get_labels_tensor(self, preset_UID):  # TODO
         """ Returns a tensor of torch.int8 zeros and ones - each value is 1 if the preset is tagged with the
         corresponding label """
         return torch.tensor([1], dtype=torch.int8)  # 'NoLabel' is the only default label
 
-    def get_labels_name(self, preset_UID):  # Overrides parent abstract method
+    def get_labels_name(self, preset_UID):
         return dexed.PresetDatabase.get_preset_labels_from_file(preset_UID)
 
     @property
-    def available_labels_names(self):  # Overrides parent abstract method
+    def available_labels_names(self):
         """ Returns a tuple of string description of labels. """
         return dexed.PresetDatabase.get_available_labels()
 
@@ -186,7 +186,7 @@ class DexedDataset(PresetDataset):
         preset_params[self.learnable_params_idx] = np.asarray(learnable_preset_params)
         return self._apply_preset_constraints(preset_params)
 
-    def _get_spectrogram_stats_file_stem(self):  # Overrides parent method
+    def _get_spectrogram_stats_file_stem(self):
         return super()._get_spectrogram_stats_file_stem() + self._operators_suffix
 
     @property
@@ -205,7 +205,7 @@ class DexedDataset(PresetDataset):
                                                                    self._operators_suffix)
         return presets_folder.joinpath(filename)
 
-    def get_wav_file(self, preset_UID, midi_note, midi_velocity):  # Overrides parent abstract method
+    def get_wav_file(self, preset_UID, midi_note, midi_velocity):
         file_path = self.get_wav_file_path(preset_UID, midi_note, midi_velocity)
         try:
             return soundfile.read(file_path)
