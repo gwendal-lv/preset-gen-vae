@@ -127,11 +127,11 @@ class PresetDatabase:
     def get_param_names(self):
         return self._param_names
 
-    def get_preset_indexes_for_algorithm(self, algo):
-        """ Returns a list of indexes of presets using the given algorithm in [[1 ; 32]] """
+    def get_preset_indexes_for_algorithms(self, algos):
+        """ Returns a list of indexes of presets using the given algorithms in [[1 ; 32]] """
         indexes = []
         for i in range(self._preset_algos.shape[0]):
-            if self._preset_algos[i] == algo:
+            if self._preset_algos[i] in algos:
                 indexes.append(i)
         return indexes
 
@@ -420,8 +420,8 @@ if __name__ == "__main__":
     #print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
 
     if True:
-        # ***** RE-WRITE ALL PRESET TO SEPARATE PICKLE/TXT FILES *****
-        # Approx. 244Mo (yep, the SQLite DB is much lighter...)
+        # ***** RE-WRITE ALL PRESETS TO SEPARATE PICKLE/TXT FILES *****
+        # Approx. 360Mo (yep, the SQLite DB is much lighter...) for all params values + names + labels
         dexed_db.write_all_presets_to_files()
 
     if False:

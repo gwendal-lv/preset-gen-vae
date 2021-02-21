@@ -36,6 +36,8 @@ def get_full_and_split_datasets(model_config, train_config):
                                             restrict_to_labels=model_config.dataset_labels)
     else:
         raise NotImplementedError("No dataset available for '{}': unrecognized synth.".format(model_config.synth))
+    if train_config.verbosity >= 2:
+        print(full_dataset.preset_indexes_helper)
     # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
     # TODO "test" holdout dataset must *always* be the same - even when performing k-fold cross-validation
     #   do 2 random splits?

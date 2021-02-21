@@ -17,7 +17,7 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '07_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '10_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -39,12 +39,12 @@ model.dim_z = 256
 model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
 # Synth used. Dexed-specific auto rename: '*' will be replaced by the actual algorithms, operators and labels
 model.synth = 'dexed_al*_op*_lab*'
-model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset TODO implement
+model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
 # flags/values to describe the dataset to be used
 model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
 # Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
 # Other synth: ...?
-model.dataset_synth_args = ([2], [1, 2, 3, 4, 5])
+model.dataset_synth_args = ([1, 2], [1, 2, 3])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -56,7 +56,7 @@ train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datase
 train.k_folds = 5  # TODO implement
 train.current_k_fold = 1  # TODO implement
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
-train.n_epochs = 200  # Total number of epochs (including previous training epochs)
+train.n_epochs = 300  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD

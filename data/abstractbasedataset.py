@@ -11,6 +11,8 @@ import numpy as np
 
 import utils.audio
 
+from data.preset import PresetsParams, PresetIndexesHelper
+
 # See https://github.com/pytorch/audio/issues/903
 #torchaudio.set_audio_backend("sox_io")
 
@@ -90,10 +92,10 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         midi_velocity = self.midi_velocity
         # loading params and wav file TODO load labels
         preset_UID = self.valid_preset_UIDs[i]
-        preset_params = self.get_preset_params(preset_UID)
-        # TODO multi-wav (multi MIDI note) loading
+        preset_params = self.get_full_preset_params(preset_UID)
+        # TODO multi-wav (multi MIDI note) loading (or rendering... not implemented yet)
         x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
-        # Spectrogram, or Mel-Spectrogram if requested
+        # Spectrogram, or Mel-Spectrogram if requested (see self.spectrogram ctor arguments)
         spectrogram = self.spectrogram(x_wav)
         if self.spectrogram_normalization == 'min_max':  # result in [-1, 1]
             spectrogram = -1.0 + (spectrogram - self.spec_stats['min'])\
@@ -104,7 +106,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
         # TODO multi-channel spectrograms with multiple MIDI notes (and velocities?)
         return torch.unsqueeze(spectrogram, 0), \
-            torch.tensor(preset_params[self.learnable_params_idx], dtype=torch.float32), \
+            torch.squeeze(preset_params.get_learnable(), 0), \
             torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32), \
             self.get_labels_tensor(preset_UID)
 
@@ -114,31 +116,69 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         pass
 
     @abstractmethod
-    def get_preset_params(self, preset_UID):
-        """ Returns the list or numpy array of parameters for the requested preset_UID. Actual implementation
-        depends on the synth (some params may be locked or unused). """
+    def get_full_preset_params(self, preset_UID) -> PresetsParams:
+        """ Returns a PresetsParams instance (see preset.py) of 1 preset for the requested preset_UID """
         pass
 
     @property
-    @abstractmethod
     def preset_param_names(self):
         """ Returns a List which contains the name of all parameters of presets (free and constrained). """
-        pass
+        return ['unnamed_param_{}'.format(i) for i in range(self.total_nb_params)]
+
+    def get_preset_param_cardinality(self, idx, learnable_representation=True):
+        """ Returns the cardinality i.e. the number of possible different values of all parameters.
+        A -1 cardinal indicates a continuous parameter.
+
+        :param idx: The full-preset (VSTi representation) index
+        :param learnable_representation: Some parameters can have a reduced cardinality for learning
+        (and their learnable representation is scaled consequently). """
+        return -1  # Default: continuous params only
+
+    def get_preset_param_quantized_steps(self, idx, learnable_representation=True):
+        """ Returns a numpy array of possible quantized values of a discrete parameter. Quantized values correspond
+        to floating-point VSTi control values. Returns None if idx refers to a continuous parameter. """
+        card = self.get_preset_param_cardinality(idx, learnable_representation)
+        if card == -1:
+            return None
+        elif card == 1:  # Constrained one-value parameter
+            return np.asarray([0.5])
+        elif card >= 2:
+            return np.linspace(0.0, 1.0, endpoint=True, num=card)
+        else:
+            raise ValueError("Invalid parameter cardinality {}".format(card))
 
     @property
     def learnable_params_count(self):
-        """ Returns the length of the second tensor returned by this dataset. """
+        """ Number of learnable VSTi controls. """
         return len(self.learnable_params_idx)
+
+    @property
+    def vst_param_learnable_model(self):
+        """ List of models for full-preset (VSTi-compatible) parameters. Possible values are None for non-learnable
+        parameters, 'num' for numerical data (continuous or discrete) and 'cat' for categorical data. """
+        return ['num' for _ in range(self.total_nb_params)]  # Default: 'num' only
+
+    @property
+    def params_default_values(self):
+        """ Dict of default values of VSTi parameters. Not all indexes are keys of this dict (many params do not
+        have a default value). """
+        return {}
 
     @property
     @abstractmethod
     def total_nb_params(self):
-        """ Returns the total count of constrained and free parameters of a preset. """
+        """ Total count of constrained and free parameters of a preset. """
         pass
+
+    @property
+    def preset_indexes_helper(self):
+        """ Returns the data.preset.PresetIndexesHelper instance which helps convert full/learnable presets
+        from this dataset. """
+        return PresetIndexesHelper(nb_params=self.total_nb_params)  # Default: identity
 
     def get_labels_tensor(self, preset_UID):
         """ Returns a tensor of torch.int8 zeros and ones - each value is 1 if the preset is tagged with the
-        corresponding label """
+        corresponding label. """
         return torch.tensor([1], dtype=torch.int8)  # 'NoLabel' is the only default label
 
     def get_labels_name(self, preset_UID):

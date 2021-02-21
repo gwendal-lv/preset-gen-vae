@@ -58,8 +58,9 @@ def train_config():
         start_checkpoint = None
 
 
-    # ========== Model definition ==========
-    _, _, _, extended_ae_model = model.build.build_extended_ae_model(config.model, config.train)
+    # ========== Model definition (requires the full_dataset to be built) ==========
+    _, _, _, extended_ae_model = model.build.build_extended_ae_model(config.model, config.train,
+                                                                     full_dataset.preset_indexes_helper)
     if start_checkpoint is not None:
         extended_ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
     extended_ae_model.eval()
@@ -220,7 +221,8 @@ def train_config():
             logger.tensorboard.add_figure('LatentMu', fig, epoch)
             fig, _ = utils.figures.plot_spearman_correlation(latent_metric=scalars['LatCorr/Valid'])
             logger.tensorboard.add_figure('LatentEntanglement', fig, epoch)
-            #fig, _ = utils.figures.  # TODO param error figure (+ transfer error Tensor to cpu)
+            fig, _ = utils.figures.plot_synth_preset_error(u_error.detach().cpu(), dataset=full_dataset)
+            logger.tensorboard.add_figure('SynthControlsError', fig, epoch)
         metrics['epochs'] = epoch + 1
         metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())

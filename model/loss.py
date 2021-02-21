@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 
+from data.preset import PresetIndexesHelper
 
 # TODO Spectral Convergence
 
@@ -34,4 +35,16 @@ class GaussianDkl:
 
 # TODO DX7 parameters Loss: to get a meaningful (but non-differentiable) loss, inferred parameter values must be
 #    quantized as they would be in Dexed
+
+
+class SynthParamsLoss:
+    """ A 'dynamic' loss which handles different representations of learnable synth parameters
+    (numerical and categorical). The appropriate loss can be computed by passing a PresetIndexesHelper instance
+    to this class constructor. """
+    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss='MSE', ):
+        self.idx_helper = idx_helper
+
+    def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
+        pass  # TODO
+
 

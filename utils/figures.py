@@ -2,6 +2,8 @@
 Utilities for plotting various figures (spectrograms, ...)
 """
 
+from typing import Optional
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -10,7 +12,7 @@ import librosa.display
 
 import logs.metrics
 
-from synth import dexed
+from data.abstractbasedataset import PresetDataset
 
 
 # Width of a parameter for scatter/box/error plots
@@ -117,68 +119,103 @@ def plot_spearman_correlation(latent_metric: logs.metrics.LatentMetric):
 
 
 def plot_synth_preset_param(ref_preset, inferred_preset=None,
-                            preset_UID=None, learnable_param_indexes=None, param_names=None,
-                            show_non_learnable=True, plot_error=False,
-                            synth_name=None):  # TODO figsize arg
-    """ Plots reference parameters values of 1 preset, and their corresponding reconstructed values if given.
+                            preset_UID=None, dataset: Optional[PresetDataset] = None):  # TODO figsize arg
+    """ Plots reference parameters values of 1 preset (full VSTi-compatible representation),
+    and their corresponding reconstructed values if given.
 
-    :param ref_preset: A ground-truth preset (must be full if learnable_param_idx is None)
+    :param ref_preset: A ground-truth preset (must be full)
     :param inferred_preset: Reconstructed preset (optional)
-    :param learnable_param_indexes: If not None, non-learnable params will be grey-colored.
-    :param param_names: List of parameter names of a full preset (optional)
-    :param show_non_learnable: If False, non-learnable parameters won't be plotted.
-    :param plot_error: If True, plot the difference between the reference and inferred preset (which must be provided)
-    :param synth_name: Synth name (e.g. "Dexed", ...) to add synth-specific elements (params cardinality, ...)
+    :param dataset: (optional) PresetDataset class, to improve the display (param names, cardinality, ...)
     """
-    if not show_non_learnable:  # TODO
-        raise NotImplementedError()
-    if plot_error:  # TODO
-        raise NotImplementedError()
     if inferred_preset is not None:
         assert len(ref_preset) == len(inferred_preset)
-    fig, axes = plt.subplots(1 if not plot_error else 2, 1,
-                             figsize=(__param_width * len(ref_preset), 4))  # TODO dynamic fig size
-    if not isinstance(axes, np.ndarray):
-        axes = [axes]  # Unsqueeze for easier looped logic
+    fig, ax = plt.subplots(1, 1, figsize=(__param_width * len(ref_preset), 4))  # TODO dynamic fig size
     # Params cardinality: deduced from the synth arg (str)
-    if synth_name == 'Dexed':
-        # Gets cardinality of *all* params (including non-learnable)
-        params_cardinality = [dexed.Dexed.get_param_cardinality(i) for i in range(len(ref_preset))]
-        for i, cardinality in enumerate(params_cardinality):
-            if cardinality >= 2:
-                y_values = np.linspace(0.0, 1.0, num=cardinality, endpoint=True)
-                sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker='_',
-                                color='grey')
-    else:
-        raise NotImplementedError("Synth '{}' parameters cannot be displayed".format(synth_name))
+    if dataset is not None:
+        if dataset.synth_name.lower() == 'dexed':
+            # Gets cardinality of *all* params (including non-learnable)
+            # Directly ask for quantized values
+            params_quant_values = [dataset.get_preset_param_quantized_steps(i, learnable_representation=False)
+                                   for i in range(len(ref_preset))]
+            for i, y_values in enumerate(params_quant_values):
+                if y_values is not None:  # Discrete param
+                    marker = '_' if y_values.shape[0] > 1 else 'x'
+                    sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker=marker,
+                                    color='grey', ax=ax)
+        else:
+            raise NotImplementedError("Synth '{}' parameters cannot be displayed".format(dataset.synth_name))
     # For easier seaborn-based plot: we use a pandas dataframe
     df = pd.DataFrame({'param_idx': range(len(ref_preset)), 'ref_preset': ref_preset})
+    learnable_param_indexes = dataset.learnable_params_idx if dataset is not None else None
     if learnable_param_indexes is not None:
         df['is_learnable'] = [(idx in learnable_param_indexes) for idx in range(len(ref_preset))]
     else:
         df['is_learnable'] = [True for idx in range(len(ref_preset))]
     # Scatter plot for "faders" values
-    sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=axes[0],
+    sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=ax,
                     hue="is_learnable",
                     palette=("blend:#BBB,#06D" if learnable_param_indexes is not None else "deep"))
     if inferred_preset is not None:
         df['inferred_preset'] = inferred_preset
-        sns.scatterplot(data=df, x='param_idx', y='inferred_preset', ax=axes[0],
+        sns.scatterplot(data=df, x='param_idx', y='inferred_preset', ax=ax,
                         hue="is_learnable",
                         palette=("blend:#BBB,#D60" if learnable_param_indexes is not None else "husl"))
-    axes[0].set_xticks(range(len(ref_preset)))
-    axes[0].set_xticklabels(['{}.{}'.format(idx, ('' if param_names is None else param_names[idx]))
+    ax.set_xticks(range(len(ref_preset)))
+    param_names = dataset.preset_param_names if dataset is not None else None
+    ax.set_xticklabels(['{}.{}'.format(idx, ('' if param_names is None else param_names[idx]))
                              for idx in range(len(ref_preset))])
-    axes[0].set(xlabel='', ylabel='Param. value', xlim=[0-0.5, len(ref_preset)-0.5])
-    axes[0].get_legend().remove()
+    ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, len(ref_preset)-0.5])
+    ax.get_legend().remove()
     if preset_UID is not None:
-        axes[0].set_title("Preset UID={}".format(preset_UID))
+        ax.set_title("Preset UID={}".format(preset_UID))
     plt.vlines(x=np.arange(len(ref_preset) + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
     # vertical "faders" separator lines
-    for tick in axes[0].get_xticklabels():
+    for tick in ax.get_xticklabels():
         tick.set_rotation(90)
     fig.tight_layout()
-    return fig, axes
+    return fig, ax
+
+
+def plot_synth_learnable_preset(learnable_preset, preset_UID=None, dataset=None, figsize=None):
+    """ Plots a single learnable preset (provided as 1D Tensor) """
+    n_params = learnable_preset.size(0)
+    fig, ax = plt.subplots(1, 1, figsize=(__param_width * n_params, 4))  # TODO dynamic fig size
+    # Params cardinality: deduced from the synth arg (str)
+    if dataset is not None:
+        if dataset.synth_name.lower() == 'dexed':
+            # Gets cardinality of *all* params (including non-learnable)
+            # Directly ask for quantized values
+            params_quant_values = [dataset.get_preset_param_quantized_steps(idx)
+                                   for idx in dataset.learnable_params_idx]
+            for i, y_values in enumerate(params_quant_values):
+                if y_values is not None:  # Discrete param
+                    marker = '_' if y_values.shape[0] > 1 else 'x'
+                    sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker=marker,
+                                    color='grey', ax=ax)
+        else:
+            raise NotImplementedError("Synth '{}' parameters cannot be displayed".format(dataset.synth_name))
+    # For easier seaborn-based plot: we use a pandas dataframe
+    df = pd.DataFrame({'param_idx': range(n_params), 'ref_preset': learnable_preset})
+    learnable_param_indexes = dataset.learnable_params_idx if dataset is not None else None
+    df['is_learnable'] = [True for idx in range(n_params)]
+    # Scatter plot for "faders" values
+    sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=ax)
+    ax.set_xticks(range(n_params))
+    if dataset is not None:
+        param_names = [dataset.preset_param_names[idx] for idx in dataset.learnable_params_idx]
+    else:
+        param_names = None
+    ax.set_xticklabels(['{}.{}'.format(idx, ('' if param_names is None else param_names[i]))
+                        for i, idx in enumerate(dataset.learnable_params_idx)])
+    ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, n_params-0.5])
+    if preset_UID is not None:
+        ax.set_title("Preset UID={}".format(preset_UID))
+    plt.vlines(x=np.arange(n_params + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+    # vertical "faders" separator lines
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(90)
+    fig.tight_layout()
+    return fig, ax
 
 
 def plot_synth_preset_error(param_batch_errors, dataset=None, figsize=None):
