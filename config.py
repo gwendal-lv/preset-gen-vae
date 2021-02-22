@@ -17,7 +17,7 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '01_newsched'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '10_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -37,12 +37,14 @@ model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from
 model.dim_z = 256
 # Modeling of synth controls probability distributions
 model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
-# Synth used - please include indication on the sub-dataset used
-model.synth = 'dexed*_harm'
-model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset TODO implement
+# Synth used. Dexed-specific auto rename: '*' will be replaced by the actual algorithms, operators and labels
+model.synth = 'dexed_al*_op*_lab*'
+model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
 # flags/values to describe the dataset to be used
-model.dataset_labels = ('harmonic',)  # list of labels, or None to use all available labels
-model.dataset_synth_args = None  # Dexed: Preset algos. Other: ...?
+model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
+# Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
+# Other synth: ...?
+model.dataset_synth_args = ([1, 2], [1, 2, 3])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -54,7 +56,7 @@ train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datase
 train.k_folds = 5  # TODO implement
 train.current_k_fold = 1  # TODO implement
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
-train.n_epochs = 200  # Total number of epochs (including previous training epochs)
+train.n_epochs = 300  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
@@ -77,7 +79,7 @@ train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
 # Possible values: 'VAELoss' (total), 'ReconsLoss', 'ContLoss'... All required losses will be summed
 train.scheduler_loss = ('ReconsLoss', 'ContLoss')
 train.scheduler_lr_factor = 0.2
-train.scheduler_patience = 10
+train.scheduler_patience = 15  # Longer patience with smaller datasets
 train.scheduler_threshold = 1e-3
 train.early_stop_lr_threshold = 1e-7  # Training considered "dead" when dynamic LR reaches this value
 
@@ -92,7 +94,20 @@ train.profiler_1_GPU = False  # Profiling on only 1 GPU allow a much better unde
 
 
 # Mini-batch size can be smaller for the last mini-batches and/or during evaluation
+# TODO multi-channel spectrograms
 model.input_tensor_size = (train.minibatch_size, 1, model.spectrogram_size[0], model.spectrogram_size[1])
+
+
+# Automatic model.synth string update - to retrieve this info in 1 Tensorboard string hparam
+if model.synth.startswith("dexed"):
+    if model.dataset_synth_args[0] is not None:  # Algos
+        model.synth = model.synth.replace("_al*", "_al" + '-'.join([str(alg) for alg in model.dataset_synth_args[0]]))
+    if model.dataset_synth_args[1] is not None:  # Operators
+        model.synth = model.synth.replace("_op*", "_op" + ''.join([str(op) for op in model.dataset_synth_args[1]]))
+    if model.dataset_labels is not None:  # Labels
+        model.synth = model.synth.replace("_lab*", '_' + '_'.join([label[0:4] for label in model.dataset_labels]))
+else:
+    raise NotImplementedError("Unknown synth prefix for model.synth '{}'".format(model.synth))
 
 
 evaluate = _Config()

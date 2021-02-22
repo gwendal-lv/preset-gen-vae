@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 
+from data.preset import PresetIndexesHelper
 
 # TODO Spectral Convergence
 
@@ -15,7 +16,7 @@ class GaussianDkl:
 
     All tensor sizes should be (N_minibatch, N_channels) """
     def __init__(self, normalize=True):
-        self.normalize = normalize
+        self.normalize = normalize  # Normalization over channels
 
     def __call__(self, mu1, logvar1, mu2=None, logvar2=None):
         if mu2 is None and logvar2 is None:
@@ -30,4 +31,20 @@ class GaussianDkl:
 
 
 # TODO MMD
+
+
+# TODO DX7 parameters Loss: to get a meaningful (but non-differentiable) loss, inferred parameter values must be
+#    quantized as they would be in Dexed
+
+
+class SynthParamsLoss:
+    """ A 'dynamic' loss which handles different representations of learnable synth parameters
+    (numerical and categorical). The appropriate loss can be computed by passing a PresetIndexesHelper instance
+    to this class constructor. """
+    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss='MSE', ):
+        self.idx_helper = idx_helper
+
+    def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
+        pass  # TODO
+
 

@@ -24,11 +24,11 @@ def build_ae_model(model_config, train_config):
     return encoder_model, decoder_model, ae_model
 
 
-def build_extended_ae_model(model_config, train_config):
+def build_extended_ae_model(model_config, train_config, idx_helper):
     encoder_model, decoder_model, ae_model = build_ae_model(model_config, train_config)
     if model_config.params_regression == 'mlp':
         extended_ae_model = extendedAE.MLPExtendedAE(ae_model, model_config.params_regression_architecture,
-                                                     model_config.dim_z, model_config.synth_params_count,
+                                                     model_config.dim_z, idx_helper,
                                                      train_config.fc_dropout)
     else:
         raise NotImplementedError()
@@ -54,7 +54,7 @@ def check_configs_on_resume_from_checkpoint(new_model_config, new_train_config, 
     :param config_json_checkpoint: config.py attributes from previous run, loaded from the .json file
     :return:
     """
-    # Model config check
+    # Model config check TODO add new attributes to check
     prev_config = config_json_checkpoint['model']
     attributes_to_check = ['name', 'run_name', 'encoder_architecture', 'dim_z', 'logs_root_dir',
                            'note_duration', 'stft_args', 'spectrogram_size', 'mel_bins']
@@ -62,7 +62,7 @@ def check_configs_on_resume_from_checkpoint(new_model_config, new_train_config, 
         if not _is_attr_equal(prev_config[attr], new_model_config.__dict__[attr]):
             raise ValueError("Model attribute '{}' is different in the new config.py ({}) and the old config.json ({})"
                              .format(attr, new_model_config.__dict__[attr], prev_config[attr]))
-    # Train config check
+    # Train config check TODO add new attributes to check
     prev_config = config_json_checkpoint['train']
     attributes_to_check = ['minibatch_size', 'datasets_proportions', 'latent_loss', 'normalize_latent_loss',
                            'ae_reconstruction_loss', 'optimizer', 'scheduler_name']

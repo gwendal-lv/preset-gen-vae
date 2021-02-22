@@ -25,8 +25,8 @@ if __name__ == "__main__":
         model_config = _Config
         model_config.logs_root_dir = "saved"
         # = = = = = Insert here model and run to be erased = = = = =
-        model_config.name = 'SpecVAE1'
-        model_config.run_name = '01_adambeta0.5'
+        model_config.name = 'ExtVAE0'
+        model_config.run_name = '07-1_lessbn_fcdrop0.2'
         # = = = = = Insert here model and run to be erased = = = = =
 
 

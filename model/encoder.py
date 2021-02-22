@@ -15,7 +15,8 @@ def available_architectures():
             'flow_synth',
             'speccnn8l1',  # Custom 8-layer CNN + 1 linear very light architecture
             'speccnn8l1_bn'  # Same base config, different BN usage (no BN on first/last layers)
-            'speccnn8l1_2',  # More channels per layer.... but no significant perf improvement
+            'speccnn8l1_2',  # MUCH more channels per layer.... but no significant perf improvement
+            'speccnn8l1_3'  # speccnn8l1_bn with Bigger conv kernels
             ]
 
 
@@ -195,7 +196,7 @@ class SpectrogramCNN(nn.Module):
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
-            self.enc_nn = nn.Sequential(layer.Conv2D(1, 32, [5, 5], [2, 2], 2, [1, 1],
+            self.enc_nn = nn.Sequential(layer.Conv2D(1, 32, [5, 5], [2, 2], 2, [1, 1], batch_norm=None,
                                                      activation=act(act_p), name_prefix='enc1'),
                                         layer.Conv2D(32, 64, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc2'),
@@ -209,7 +210,29 @@ class SpectrogramCNN(nn.Module):
                                                      activation=act(act_p), name_prefix='enc6'),
                                         layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc7'),
-                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
+                                                     activation=act(act_p), name_prefix='enc8'),
+                                        )
+        elif self.architecture == 'speccnn8l1_3':  # XXX GB (RAM) ; XXX GMultAdd  (batch 256)
+            ''' speeccnn8l1_bn with bigger conv kernels '''
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            ker = [5, 5]  # TODO try bigger 1st ker?
+            self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1], batch_norm=None,
+                                                     activation=act(act_p), name_prefix='enc1'),
+                                        layer.Conv2D(8, 16, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc2'),
+                                        layer.Conv2D(16, 32, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc3'),
+                                        layer.Conv2D(32, 64, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc4'),
+                                        layer.Conv2D(64, 128, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc5'),
+                                        layer.Conv2D(128, 256, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc6'),
+                                        layer.Conv2D(256, 512, ker, [2, 2], 2, [1, 1],
+                                                     activation=act(act_p), name_prefix='enc7'),
+                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
                                                      activation=act(act_p), name_prefix='enc8'),
                                         )
         else:

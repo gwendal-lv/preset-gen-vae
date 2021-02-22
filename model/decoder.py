@@ -37,7 +37,10 @@ class SpectrogramDecoder(nn.Module):
                                      nn.Linear(1024, int(np.prod(self.cnn_input_shape))))  # TODO add last ReLU?
         elif 'speccnn8l1' in self.architecture:
             if spectrogram_input_size == (257, 347):
-                self.cnn_input_shape = (1024, 3, 4)
+                if self.architecture == 'speccnn8l1_3':
+                    self.cnn_input_shape = (1024, 3, 3)
+                else:
+                    self.cnn_input_shape = (1024, 3, 4)
                 self.mlp = nn.Sequential(nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape))),
                                          #nn.ReLU(),  # This ReLU leads very bad generalization... why???
                                          nn.Dropout(self.fc_dropout))
@@ -194,6 +197,28 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(64, 32, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
                                         nn.ConvTranspose2d(32, 1, [5, 5], [2, 2], 2),
+                                        nn.Tanh()
+                                        )
+        elif self.architecture == 'speccnn8l1_3':  # XXX GB (RAM) ; XXX GMultAdd  (batch 256)
+            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
+            act = nn.LeakyReLU
+            act_p = 0.1  # Activation param
+            ker = [5, 5]
+            self.dec_nn = nn.Sequential(layer.TConv2D(1024, 512, [1, 1], [1, 1], 0,
+                                                      activation=act(act_p), name_prefix='dec1'),
+                                        layer.TConv2D(512, 256, ker, [2, 2], 2, output_padding=[0, 1],
+                                                      activation=act(act_p), name_prefix='dec2'),
+                                        layer.TConv2D(256, 128, ker, [2, 2], 2, output_padding=[0, 0],
+                                                      activation=act(act_p), name_prefix='dec3'),
+                                        layer.TConv2D(128, 64, ker, [2, 2], 2, output_padding=[0, 1],
+                                                      activation=act(act_p), name_prefix='dec4'),
+                                        layer.TConv2D(64, 32, ker, [2, 2], 2, output_padding=[0, 1],
+                                                      activation=act(act_p), name_prefix='dec5'),
+                                        layer.TConv2D(32, 16, ker, [2, 2], 2, output_padding=[0, 0],
+                                                      activation=act(act_p), name_prefix='dec6'),
+                                        layer.TConv2D(16, 8, ker, [2, 2], 2, output_padding=[0, 1],
+                                                      activation=act(act_p), name_prefix='dec7'),
+                                        nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2),
                                         nn.Tanh()
                                         )
 
