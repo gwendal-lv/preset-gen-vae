@@ -9,14 +9,22 @@ from data.preset import PresetIndexesHelper
 
 
 class PresetActivation(nn.Module):
-    """ Applies the appropriate activations (e.g. sidmoid, softmax, ...) to neurons or groups of neurons. """
-    def __init__(self, idx_helper: PresetIndexesHelper):
+    """ Applies the appropriate activations (e.g. sigmoid, softmax, ...) to different neurons or groups of neurons
+    of a given input layer. """
+    def __init__(self, idx_helper: PresetIndexesHelper,
+                 numerical_activation=nn.Sigmoid()):
         super().__init__()
         self.idx_helper = idx_helper
+        self.numerical_act = numerical_activation
+        # Pre-compute indexes lists (to use less CPU)
+        self.numerical_indexes = self.idx_helper.get_numerical_learnable_indexes()
+        # TODO categorical indexes
 
     def forward(self, x):
         """ Applies per-parameter output activations using the PresetIndexesHelper attribute of this instance. """
-        return torch.sigmoid(x)    # FIXME don't do sigmoid only
+        x[:, self.numerical_indexes] = self.numerical_act(x[:, self.numerical_indexes])
+        # TODO categorical indexes
+        return x
 
 
 class MLPExtendedAE(nn.Module):

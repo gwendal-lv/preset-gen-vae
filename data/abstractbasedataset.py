@@ -159,6 +159,19 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         return ['num' for _ in range(self.total_nb_params)]  # Default: 'num' only
 
     @property
+    def numerical_vst_params(self):
+        """ List of indexes of numerical parameters (whatever their discrete number of values) in the VSTi.
+        E.g. a 8-step volume param is numerical, while a LFO shape param is not (it is categorical). The
+        learnable model can be different from the VSTi model. """
+        return [i for i in range(self.total_nb_params)]  # Default: numerical only
+
+    @property
+    def categorical_vst_params(self):
+        """ List of indexes of categorical parameters in the VSTi. The learnable model can be different
+        from the VSTi model."""
+        return []  # Default: no categorical params
+
+    @property
     def params_default_values(self):
         """ Dict of default values of VSTi parameters. Not all indexes are keys of this dict (many params do not
         have a default value). """

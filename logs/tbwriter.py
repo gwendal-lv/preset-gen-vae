@@ -49,6 +49,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['wdecay'] = self.train_config.weight_decay
         self.hyper_params['fcdrop'] = self.train_config.fc_dropout
         self.hyper_params['synth'] = self.model_config.synth
+        self.hyper_params['syntargs'] = self.model_config.synth_args_str
         # Latent space hparams
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['latloss'] = self.train_config.latent_loss

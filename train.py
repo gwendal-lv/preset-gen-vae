@@ -86,6 +86,7 @@ def train_config():
 
 
     # ========== Losses (criterion functions) ==========
+    # Training losses (for backprop) and Metrics losses and accuracies
     if config.train.ae_reconstruction_loss == 'MSE':
         reconstruction_criterion = nn.MSELoss(reduction='mean')
     else:
@@ -94,17 +95,27 @@ def train_config():
         latent_criterion = model.loss.GaussianDkl(normalize=config.train.normalize_latent_loss)
     else:
         raise NotImplementedError()
-    if config.model.controls_losses == 'MSE':  # TODO multiple criteria (mse/categorical) or dedicated loss class
-        controls_criterion = nn.MSELoss(reduction='mean')
+    if config.model.controls_losses == 'MSE':
+        controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper,
+                                                        numerical_loss=nn.MSELoss(reduction='mean'))
+        controls_num_eval_criterion =\
+            model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
+                                                    numerical_loss=nn.MSELoss(reduction='mean'))
     else:
         raise NotImplementedError()
+    controls_accuracy_criterion = model.loss.CategoricalParamsAccuracy(full_dataset.preset_indexes_helper,
+                                                                       reduce=True, percentage_output=True)
 
 
     # ========== Scalars, metrics, images and audio to be tracked in Tensorboard ==========
     scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
                'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
                'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
-               'ContLoss/Train': EpochMetric(), 'ContLoss/Valid': EpochMetric(),
+               # Controls losses used for backprop
+               'Controls/BackpropLoss/Train': EpochMetric(), 'Controls/BackpropLoss/Valid': EpochMetric(),
+               # Other controls scalars (quantized numerical params loss, categorical params accuracy)
+               'Controls/QLoss/Train': EpochMetric(), 'Controls/QLoss/Valid': EpochMetric(),
+               'Controls/Accuracy/Train': EpochMetric(), 'Controls/Accuracy/Valid': EpochMetric(),
                'LatCorr/Train': LatentMetric(config.model.dim_z, len(dataset['train'])),
                'LatCorr/Valid': LatentMetric(config.model.dim_z, len(dataset['validation'])),
                'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
@@ -115,7 +126,8 @@ def train_config():
     metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
                'LatLoss/Valid_': logs.metrics.BufferedMetric(),
                'LatCorr/Valid_': logs.metrics.BufferedMetric(),
-               'ContLoss/Valid_': logs.metrics.BufferedMetric(),  # TODO compensated MSE
+               'Controls/QLoss/Valid_': logs.metrics.BufferedMetric(),
+               'Controls/Accuracy/Valid_': logs.metrics.BufferedMetric(),
                'epochs': config.train.start_epoch}
     # TODO check metrics as required in config.py
     logger.tensorboard.init_hparams_and_metrics(metrics)  # hparams added knowing config.*
@@ -170,8 +182,10 @@ def train_config():
                     lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    cont_loss = controls_criterion(u_out, u_in)
-                    scalars['ContLoss/Train'].append(cont_loss)
+                    cont_loss = controls_criterion(u_in, u_out)
+                    scalars['Controls/BackpropLoss/Train'].append(cont_loss)
+                    scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(u_in, u_out))
+                    scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(u_in, u_out))
                     (recons_loss + lat_loss + cont_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
@@ -198,9 +212,11 @@ def train_config():
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                 scalars['LatLoss/Valid'].append(lat_loss)
                 # lat_loss *= scalars['Sched/beta'].get(epoch)  # Useless without backprop
-                cont_loss = controls_criterion(u_out, u_in)
+                cont_loss = controls_criterion(u_in, u_out)
                 u_error = torch.cat([u_error, u_in - u_out])
-                scalars['ContLoss/Valid'].append(cont_loss)
+                scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
+                scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(u_in, u_out))
+                scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(u_in, u_out))
                 # tensorboard samples for minibatch 'eval' [0] only
                 if i == 0 and should_plot:
                     fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
@@ -208,7 +224,8 @@ def train_config():
                                                              add_colorbar=True)
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
         scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
-        # Dynamic LR scheduling depends on validation performance. Loss for plateau-detection is chosen in config.py
+        # Dynamic LR scheduling depends on validation performance
+        # Summed losses for plateau-detection are chosen in config.py
         scheduler.step(sum([scalars['{}/Valid'.format(loss_name)].get() for loss_name in config.train.scheduler_loss]))
         scalars['Sched/LR'] = logs.metrics.SimpleMetric(optimizer.param_groups[0]['lr'])
         early_stop = (optimizer.param_groups[0]['lr'] < config.train.early_stop_lr_threshold)  # Early stop?
@@ -227,7 +244,8 @@ def train_config():
         metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
         metrics['LatCorr/Valid_'].append(scalars['LatCorr/Valid'].get())
-        metrics['ContLoss/Valid_'].append(scalars['ContLoss/Valid'].get())
+        metrics['Controls/QLoss/Valid_'].append(scalars['Controls/QLoss/Valid'].get())
+        metrics['Controls/Accuracy/Valid_'].append(scalars['Controls/Accuracy/Valid'].get())
         logger.tensorboard.update_metrics(metrics)
 
         # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =

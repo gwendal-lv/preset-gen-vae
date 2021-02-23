@@ -17,8 +17,8 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '10_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
+model.run_name = '1_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
+model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
 model.params_regression = 'mlp'  # Parameters regression model
@@ -37,8 +37,11 @@ model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from
 model.dim_z = 256
 # Modeling of synth controls probability distributions
 model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
-# Synth used. Dexed-specific auto rename: '*' will be replaced by the actual algorithms, operators and labels
-model.synth = 'dexed_al*_op*_lab*'
+# TODO which loss precisely?
+model.synth = 'dexed'
+# Dexed-specific auto rename: '*' in 'al*_op*_lab*' will be replaced by the actual algorithms, operators and labels
+model.synth_args_str = 'al*_op*_lab*'  # Auto-generated string (see end of script)
+# TODO categorical params (by full-preset index)
 model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
 # flags/values to describe the dataset to be used
 model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
@@ -76,8 +79,8 @@ train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
 train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
-# Possible values: 'VAELoss' (total), 'ReconsLoss', 'ContLoss'... All required losses will be summed
-train.scheduler_loss = ('ReconsLoss', 'ContLoss')
+# Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss'... All required losses will be summed
+train.scheduler_loss = ('ReconsLoss', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 15  # Longer patience with smaller datasets
 train.scheduler_threshold = 1e-3
@@ -99,13 +102,16 @@ model.input_tensor_size = (train.minibatch_size, 1, model.spectrogram_size[0], m
 
 
 # Automatic model.synth string update - to retrieve this info in 1 Tensorboard string hparam
-if model.synth.startswith("dexed"):
+if model.synth == "dexed":
     if model.dataset_synth_args[0] is not None:  # Algos
-        model.synth = model.synth.replace("_al*", "_al" + '-'.join([str(alg) for alg in model.dataset_synth_args[0]]))
+        model.synth_args_str = model.synth_args_str.replace("_al*", "_al" +
+                                                            '.'.join([str(alg) for alg in model.dataset_synth_args[0]]))
     if model.dataset_synth_args[1] is not None:  # Operators
-        model.synth = model.synth.replace("_op*", "_op" + ''.join([str(op) for op in model.dataset_synth_args[1]]))
+        model.synth_args_str = model.synth_args_str.replace("_op*", "_op" +
+                                                            ''.join([str(op) for op in model.dataset_synth_args[1]]))
     if model.dataset_labels is not None:  # Labels
-        model.synth = model.synth.replace("_lab*", '_' + '_'.join([label[0:4] for label in model.dataset_labels]))
+        model.synth_args_str = model.synth_args_str.replace("_lab*", '_' +
+                                                            '_'.join([label[0:4] for label in model.dataset_labels]))
 else:
     raise NotImplementedError("Unknown synth prefix for model.synth '{}'".format(model.synth))
 
