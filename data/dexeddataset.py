@@ -144,6 +144,14 @@ class DexedDataset(abstractbasedataset.PresetDataset):
         return self._vst_param_learnable_model
 
     @property
+    def numerical_vst_params(self):
+        return dexed.Dexed.get_numerical_params_indexes()
+
+    @property
+    def categorical_vst_params(self):
+        return dexed.Dexed.get_categorical_params_indexes()
+
+    @property
     def params_default_values(self):
         return self._params_default_values
 

@@ -33,8 +33,12 @@ class PresetIndexesHelper:
             assert nb_params is not None
             self._full_to_learnable = np.arange(0, nb_params)
             self._learnable_to_full = self._full_to_learnable
-            self._vst_param_learnable_model = ['num' for _ in range(self.full_preset_size)]
             self._param_names = ['param' for _ in range(self.full_preset_size)]
+            # Default: no categorical param
+            self._vst_param_learnable_model = ['num' for _ in range(self.full_preset_size)]
+            self._param_cardinals = [-1 for _ in range(self.full_preset_size)]
+            self._numerical_vst_params = [i for i in range(self.full_preset_size)]
+            self._categorical_vst_params = []
         # Actual construction based on a dataset
         else:
             assert nb_params is None
@@ -53,6 +57,11 @@ class PresetIndexesHelper:
                     raise NotImplementedError("TODOOOOO categorical indexes")
                 else:
                     raise ValueError("Unknown param learning model '{}'".format(dataset.vst_param_learnable_model[i]))
+            # Final inits
+            self._param_cardinals = [dataset.get_preset_param_cardinality(idx, learnable_representation=True)
+                                     for idx in range(self.full_preset_size)]
+            self._numerical_vst_params = dataset.numerical_vst_params
+            self._categorical_vst_params = dataset.categorical_vst_params
 
     def __str__(self):
         learnable_count = sum([(0 if learn_model is None else 1) for learn_model in self._vst_param_learnable_model])
@@ -60,8 +69,24 @@ class PresetIndexesHelper:
         for i, learn_model in enumerate(self._vst_param_learnable_model):
             if learn_model is not None:
                 params_str += "    - {}.{}: {} ({})".format(i, self._param_names[i], learn_model,
-                                                      self._full_to_learnable[i])
+                                                            self._full_to_learnable[i])
         return params_str
+
+    # - - - - - Properties about VSTi (full-preset) parameters - - - - -
+    @property
+    def full_preset_size(self):
+        """ Size of a full VSTi preset (learnable and non-learnable parameters) """
+        return len(self._full_to_learnable)
+
+    @property
+    def numerical_vst_params(self):
+        """ VSTi-indexes of numerical synth parameters (e.g. volume, cutoff freq, ...) """
+        return self._numerical_vst_params
+
+    @property
+    def categorical_vst_params(self):
+        """ VSTi-indexes of categorical synth parameters (e.g. routing, LFO wave type, ...) """
+        return self._categorical_vst_params
 
     @property
     def vst_param_learnable_model(self):
@@ -69,15 +94,8 @@ class PresetIndexesHelper:
         return self._vst_param_learnable_model
 
     @property
-    def full_preset_size(self):
-        """ Size of a full VSTi preset (learnable and non-learnable parameters) """
-        return len(self._full_to_learnable)
-
-    @property
-    def learnable_preset_size(self):
-        """ Size of the learnable representation of a preset. Can be smaller than self.full_preset_size
-        (non-learnable params) or bigger when using categorical representations. """
-        return len(self._learnable_to_full)
+    def vst_param_cardinals(self):
+        return self._param_cardinals
 
     @property
     def full_to_learnable(self):
@@ -86,12 +104,28 @@ class PresetIndexesHelper:
         Array index in [0, self.full_preset_size - 1] """
         return self._full_to_learnable
 
+    # - - - - - Properties about learnable parameters (neural network output) - - - - -
+    @property
+    def learnable_preset_size(self):
+        """ Size of the learnable representation of a preset. Can be smaller than self.full_preset_size
+        (non-learnable params) or bigger when using categorical representations. """
+        return len(self._learnable_to_full)
+
     @property
     def learnable_to_full(self):
         """ Contains the original "full-preset" (VSTi-compatible) parameter index which corresponds to
         a learnable-index index. Array Indexes in [0, self.learnable_preset_size - 1] """
         return self._learnable_to_full
 
+    def get_numerical_learnable_indexes(self):
+        """ Returns the list of indexes (learnable preset) of numerical parameters """
+        numerical_indexes = list()
+        for i, learn_model in enumerate(self._vst_param_learnable_model):
+            if learn_model == 'num':
+                numerical_indexes.append(self._full_to_learnable[i])  # is an int
+        return numerical_indexes
+
+    # TODO get_categorical_learnable_indexes(self):
 
 
 class PresetsParams:
