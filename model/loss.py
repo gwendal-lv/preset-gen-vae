@@ -67,21 +67,6 @@ class QuantizedNumericalParamsLoss:
     def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss=nn.MSELoss()):
         self.idx_helper = idx_helper
         self.numerical_loss = numerical_loss
-        # Pre-compute indexes dicts (to use less CPU during learning). 'num' stands for 'numerical' (not number)
-        # Dict keys are VST 'full-preset' indexes
-        self.num_idx_learned_as_num = dict()  # Dict of integer indexes
-        self.num_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
-        for vst_idx in self.idx_helper.numerical_vst_params:
-            learnable_model = self.idx_helper.vst_param_learnable_model[vst_idx]
-            if learnable_model is not None:
-                if learnable_model == 'num':  # 1 learnable index
-                    self.num_idx_learned_as_num[vst_idx] = self.idx_helper.full_to_learnable[vst_idx]
-                    assert isinstance(self.num_idx_learned_as_num[vst_idx], int)
-                elif learnable_model == 'cat':  # list of learnable indexes
-                    self.num_idx_learned_as_cat[vst_idx] = self.idx_helper.full_to_learnable[vst_idx]
-                    assert isinstance(self.num_idx_learned_as_cat[vst_idx], Iterable)
-                else:
-                    raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
         # Cardinality checks
         for vst_idx, _ in self.num_idx_learned_as_cat.items():
             assert self.idx_helper.vst_param_cardinals[vst_idx] > 0
@@ -95,7 +80,7 @@ class QuantizedNumericalParamsLoss:
         u_in_part = torch.empty((minibatch_size, 0), device=u_in.device, requires_grad=False)
         u_out_part = torch.empty((minibatch_size, 0), device=u_in.device, requires_grad=False)
         # quantize numerical learnable representations
-        for vst_idx, learn_idx in self.num_idx_learned_as_num.items():
+        for vst_idx, learn_idx in self.idx_helper.num_idx_learned_as_num.items():
             param_batch = torch.unsqueeze(u_in[:, learn_idx].detach(), 1)  # Column-vector
             u_in_part = torch.cat((u_in_part, param_batch), dim=1)  # column-by-column matrix
             param_batch = torch.unsqueeze(u_out[:, learn_idx].detach(), 1)  # Column-vector
@@ -104,7 +89,7 @@ class QuantizedNumericalParamsLoss:
                 param_batch = torch.round(param_batch * (cardinal - 1.0)) / (cardinal - 1.0)
             u_out_part = torch.cat((u_out_part, param_batch), dim=1)  # column-by-column matrix
         # TODO convert one-hot encoded categorical learnable representations to (quantized) numerical
-        for vst_idx, learn_indexes in self.num_idx_learned_as_cat.items():
+        for vst_idx, learn_indexes in self.idx_helper.num_idx_learned_as_cat.items():
             raise NotImplementedError("TODO cat to num conversion")
         return self.numerical_loss(u_in_part, u_out_part)
 
@@ -122,21 +107,6 @@ class CategoricalParamsAccuracy:
         self.idx_helper = idx_helper
         self.reduce = reduce
         self.percentage_output = percentage_output
-        # Pre-compute indexes dicts (to use less CPU during learning). 'num' stands for 'numerical' (not number)
-        # Dict keys are VST 'full-preset' indexes
-        self.cat_idx_learned_as_num = dict()  # Dict of integer indexes
-        self.cat_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
-        for vst_idx in self.idx_helper.categorical_vst_params:
-            learnable_model = self.idx_helper.vst_param_learnable_model[vst_idx]
-            if learnable_model is not None:
-                if learnable_model == 'num':  # 1 learnable index
-                    self.cat_idx_learned_as_num[vst_idx] = self.idx_helper.full_to_learnable[vst_idx]
-                    assert isinstance(self.cat_idx_learned_as_num[vst_idx], int)
-                elif learnable_model == 'cat':  # list of learnable indexes
-                    self.cat_idx_learned_as_cat[vst_idx] = self.idx_helper.full_to_learnable[vst_idx]
-                    assert isinstance(self.cat_idx_learned_as_cat[vst_idx], Iterable)
-                else:
-                    raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
 
     def __call__(self, u_in: torch.Tensor, u_out: torch.Tensor):
         """ Returns accuracy (or accuracies) for all categorical VST params.
@@ -144,7 +114,7 @@ class CategoricalParamsAccuracy:
         The type of representation is stored in self.idx_helper """
         accuracies = dict()
         # Accuracy of numerical learnable representations (involves quantization)
-        for vst_idx, learn_idx in self.cat_idx_learned_as_num.items():
+        for vst_idx, learn_idx in self.idx_helper.cat_idx_learned_as_num.items():
             cardinal = self.idx_helper.vst_param_cardinals[vst_idx]
             param_batch = torch.unsqueeze(u_in[:, learn_idx].detach(), 1)  # Column-vector
             # Class indexes, from 0 to cardinal-1
@@ -153,8 +123,10 @@ class CategoricalParamsAccuracy:
             classes_out = torch.round(param_batch * (cardinal - 1.0)).type(torch.int32)
             accuracies[vst_idx] = (classes_in == classes_out).count_nonzero().item() / classes_in.numel()
         # TODO accuracy of one-hot encoded categorical learnable representations
-        #  torch.argmax
-        # factor 100.0?
+        for vst_idx, learn_indexes in self.idx_helper.cat_idx_learned_as_cat:
+            raise NotImplementedError("TODOOOO oooo")
+            #  torch.argmax
+        # Factor 100.0?
         if self.percentage_output:
             for k, v in accuracies.items():
                 accuracies[k] = v * 100.0

@@ -10,6 +10,7 @@ from collections.abc import Iterable
 import numpy as np
 
 import torch
+import torch.nn.functional
 
 
 
@@ -39,29 +40,64 @@ class PresetIndexesHelper:
             self._param_cardinals = [-1 for _ in range(self.full_preset_size)]
             self._numerical_vst_params = [i for i in range(self.full_preset_size)]
             self._categorical_vst_params = []
+            self._learnable_preset_size = nb_params
         # Actual construction based on a dataset
         else:
             assert nb_params is None
             self._param_names = dataset.preset_param_names
             self._vst_param_learnable_model = dataset.vst_param_learnable_model
+            self._param_cardinals = [dataset.get_preset_param_cardinality(vst_idx, learnable_representation=True)
+                                     for vst_idx in range(dataset.total_nb_params)]
             # VSTi Param-by-param init, based on self._vst_param_learnable_model and dataset params cardinalities
             current_learnable_idx = 0
-            for i in range(dataset.total_nb_params):
-                if dataset.vst_param_learnable_model[i] is None:
+            for vst_idx in range(dataset.total_nb_params):
+                if dataset.vst_param_learnable_model[vst_idx] is None:
                     self._full_to_learnable.append(None)
-                elif dataset.vst_param_learnable_model[i] == 'num':
+                elif dataset.vst_param_learnable_model[vst_idx] == 'num':
+                    self._learnable_to_full.append(vst_idx)
                     self._full_to_learnable.append(current_learnable_idx)
-                    self._learnable_to_full.append(i)
                     current_learnable_idx += 1
-                elif dataset.vst_param_learnable_model[i] == 'cat':
-                    raise NotImplementedError("TODOOOOO categorical indexes")
+                elif dataset.vst_param_learnable_model[vst_idx] == 'cat':
+                    learnable_indexes = list()
+                    for _ in range(self._param_cardinals[vst_idx]):
+                        self._learnable_to_full.append(vst_idx)
+                        learnable_indexes.append(current_learnable_idx)
+                        current_learnable_idx += 1
+                    self._full_to_learnable.append(learnable_indexes)
                 else:
-                    raise ValueError("Unknown param learning model '{}'".format(dataset.vst_param_learnable_model[i]))
+                    raise ValueError("Unknown param learning model '{}'".format(dataset.vst_param_learnable_model[vst_idx]))
+            self._learnable_preset_size = current_learnable_idx
             # Final inits
-            self._param_cardinals = [dataset.get_preset_param_cardinality(idx, learnable_representation=True)
-                                     for idx in range(self.full_preset_size)]
             self._numerical_vst_params = dataset.numerical_vst_params
             self._categorical_vst_params = dataset.categorical_vst_params
+        # Pre-compute useful indexes dicts (to use less CPU during learning). 'num' stands for 'numerical'
+        # Dict keys are VST 'full-preset' indexes
+        self._cat_idx_learned_as_num = dict()  # Dict of integer indexes
+        self._cat_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
+        for vst_idx in self.categorical_vst_params:
+            learnable_model = self.vst_param_learnable_model[vst_idx]
+            if learnable_model is not None:
+                if learnable_model == 'num':  # 1 learnable index
+                    self._cat_idx_learned_as_num[vst_idx] = self.full_to_learnable[vst_idx]
+                    assert isinstance(self._cat_idx_learned_as_num[vst_idx], int)
+                elif learnable_model == 'cat':  # list of learnable indexes
+                    self._cat_idx_learned_as_cat[vst_idx] = self.full_to_learnable[vst_idx]
+                    assert isinstance(self._cat_idx_learned_as_cat[vst_idx], Iterable)
+                else:
+                    raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
+        self._num_idx_learned_as_num = dict()  # Dict of integer indexes
+        self._num_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
+        for vst_idx in self.numerical_vst_params:
+            learnable_model = self.vst_param_learnable_model[vst_idx]
+            if learnable_model is not None:
+                if learnable_model == 'num':  # 1 learnable index
+                    self._num_idx_learned_as_num[vst_idx] = self.full_to_learnable[vst_idx]
+                    assert isinstance(self._num_idx_learned_as_num[vst_idx], int)
+                elif learnable_model == 'cat':  # list of learnable indexes
+                    self._num_idx_learned_as_cat[vst_idx] = self.full_to_learnable[vst_idx]
+                    assert isinstance(self._num_idx_learned_as_cat[vst_idx], Iterable)
+                else:
+                    raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
 
     def __str__(self):
         learnable_count = sum([(0 if learn_model is None else 1) for learn_model in self._vst_param_learnable_model])
@@ -77,6 +113,10 @@ class PresetIndexesHelper:
     def full_preset_size(self):
         """ Size of a full VSTi preset (learnable and non-learnable parameters) """
         return len(self._full_to_learnable)
+
+    @property
+    def vst_param_names(self):
+        return self._param_names
 
     @property
     def numerical_vst_params(self):
@@ -104,12 +144,37 @@ class PresetIndexesHelper:
         Array index in [0, self.full_preset_size - 1] """
         return self._full_to_learnable
 
+    # - - - - - Pre-computed data structures, to reduce CPU usage during training - - - - -
+    @property
+    def cat_idx_learned_as_num(self) -> dict:
+        """ Categorical VST params which are learned as numerical (default behavior).
+        Dict keys are VST param indexes and values are learnable params indexes. """
+        return self._cat_idx_learned_as_num
+
+    @property
+    def cat_idx_learned_as_cat(self) -> dict:
+        """ Categorical VST params which are learned as categorical.
+        Dict keys are VST param indexes and values are learnable params indexes. """
+        return self._cat_idx_learned_as_cat
+
+    @property
+    def num_idx_learned_as_num(self) -> dict:
+        """ Numerical VST params which are learned as numerical (default behavior).
+        Dict keys are VST param indexes and values are learnable params indexes. """
+        return self._num_idx_learned_as_num
+
+    @property
+    def num_idx_learned_as_cat(self) -> dict:
+        """ Numerical VST params which are learned as categorical (to be tested).
+        Dict keys are VST param indexes and values are learnable params indexes. """
+        return self._num_idx_learned_as_cat
+
     # - - - - - Properties about learnable parameters (neural network output) - - - - -
     @property
     def learnable_preset_size(self):
         """ Size of the learnable representation of a preset. Can be smaller than self.full_preset_size
         (non-learnable params) or bigger when using categorical representations. """
-        return len(self._learnable_to_full)
+        return self._learnable_preset_size
 
     @property
     def learnable_to_full(self):
@@ -127,13 +192,29 @@ class PresetIndexesHelper:
 
     # TODO get_categorical_learnable_indexes(self):
 
+    def get_learnable_param_quantized_steps(self, idx):
+        """ Returns None for a continuous learnable output, actual quantized steps for a discrete-numerical output,
+        or [0.0, 1.0] for a categorical output neuron. """
+        vst_idx = self.learnable_to_full[idx]
+        learn_model = self.vst_param_learnable_model[vst_idx]
+        if learn_model == 'cat':  # This learnable output is a category probability
+            return np.asarray([0.0, 1.0])
+        elif learn_model == 'num':  # Continuous, or discrete numerical?
+            if self.vst_param_cardinals[vst_idx] >= 2:
+                return np.linspace(0.0, 1.0, endpoint=True, num=self.vst_param_cardinals[vst_idx])
+            else:
+                return None
+        else:
+            raise ValueError("Unknown learnable model '{}' for idx={} (corresponding VST param idx={})"
+                             .format(learn_model, idx, vst_idx))
+
 
 class PresetsParams:
     """
     This class basically supports two representations of presets:
 
     - 'full', which contains all parameters extracted from a database, with some constraints applied. Such presets
-      can be used for VSTi audio rendering.
+      can be used for VSTi audio rendering. Numerical representations only ().
 
     - 'learnable', which contains only the learnable parameters, with transformations on some learnable
       params (e.g. linear to categorical, distortion on linear values, ...)
@@ -161,17 +242,17 @@ class PresetsParams:
         # Size checks - 2D Tensors only
         if self._full_presets is not None:
             assert len(self._full_presets.size()) == 2
+            self._batch_size = self._full_presets.size(0)
         if self._learnable_presets is not None:
             assert len(self._learnable_presets.size()) == 2
+            self._batch_size = self._learnable_presets.size(0)
         # Types check - float32 tensors only (some previous numpy transforms might switch to float64)
         if self._full_presets is not None:
             assert self._full_presets.dtype == self.dtype
         if self._learnable_presets is not None:
             assert self._learnable_presets.dtype == self.dtype
         # Index helpers - already built in dataset
-        self.idx_helper = dataset.preset_indexes_helper
-
-        # TODO data structures to ease categorical<->linear transformations
+        self.idx_helper = dataset.preset_indexes_helper  # type: PresetIndexesHelper
         # TODO change learnable indexes if categorical outputs
 
     @property
@@ -195,24 +276,44 @@ class PresetsParams:
         else:  # From learnable presets
             full_presets = -0.1 * torch.ones((self._learnable_presets.size(0), self.idx_helper.full_preset_size))
             # We use the index translator to perform a param-by-param fill
-            for i in range(self.idx_helper.full_preset_size):
+            for vst_idx, learnable_indexes in enumerate(self.idx_helper.full_to_learnable):
                 # Non-learnable: default value if exists, or remains -1.0
-                if self.idx_helper.vst_param_learnable_model[i] is None:
-                    if i in self._default_constrained_values:  # Is key in dict?
-                        full_presets[:, i] = self._default_constrained_values[i]\
+                if self.idx_helper.vst_param_learnable_model[vst_idx] is None:
+                    if vst_idx in self._default_constrained_values:  # Is key in dict?
+                        full_presets[:, vst_idx] = self._default_constrained_values[vst_idx]\
                                              * torch.ones((self._learnable_presets.size(0), ))
-                elif self.idx_helper.vst_param_learnable_model[i] == 'num':  # Numerical
-                    full_presets[:, i] = self._learnable_presets[:, self.idx_helper.full_to_learnable[i]]
-                else:  # TODO turn categorical into numerical
-                    raise NotImplementedError('TODO')
+                elif isinstance(learnable_indexes, Iterable):  # Categorical
+                    n_classes = self.idx_helper.vst_param_cardinals[vst_idx]
+                    classes_one_hot = self._learnable_presets[:, learnable_indexes]
+                    classes = torch.argmax(classes_one_hot, dim=-1)
+                    full_presets[:, vst_idx] = classes / (n_classes - 1.0)
+                elif isinstance(learnable_indexes, int):  # Numerical
+                    learn_idx = learnable_indexes  # type: int
+                    full_presets[:, vst_idx] = self._learnable_presets[:, learn_idx]
+                else:
+                    raise ValueError("Bad learnable index(es) for vst idx = {}".format(vst_idx))
             return full_presets
 
     def get_learnable(self) -> torch.Tensor:
         if self.is_from_full_presets:
-            # Copy non-constrained columns, to prevent modification of the original presets
-            learnable_presets = torch.Tensor(self._full_presets[:, self._learnable_params_idx])
-            # TODO numerical to categorical
-            return learnable_presets
+            # Pre-allocation of learnable tensor
+            learnable_tensor = torch.empty((self._batch_size, self.idx_helper.learnable_preset_size),
+                                           device=self._full_presets.device, requires_grad=False)
+            # Numerical/categorical in VST preset are *always* stored as numerical (whatever their true
+            # meaning is). So we turn only numerical to numerical/categorical
+            for vst_idx, learn_indexes in enumerate(self.idx_helper.full_to_learnable):
+                if learn_indexes is not None:  # Learnable params only
+                    if isinstance(learn_indexes, Iterable):  # learned as categorical: one-hot encoding
+                        n_classes = self.idx_helper.vst_param_cardinals[vst_idx]
+                        classes = torch.round(self._full_presets[:, vst_idx] * (n_classes - 1))
+                        classes = classes.type(torch.int64)  # index type required
+                        # TODO check if this works with batch size > 1.... (
+                        classes_one_hot = torch.nn.functional.one_hot(classes, num_classes=n_classes)
+                        learnable_tensor[:, learn_indexes] = classes_one_hot.type(torch.float)
+                    else:  # learned as numerical: OK, simple copy
+                        idx = learn_indexes  # type: int
+                        learnable_tensor[:, idx] = self._full_presets[:, vst_idx]
+            return learnable_tensor
         else:
             return self._learnable_presets
 
@@ -241,27 +342,40 @@ class DexedPresetsParams(PresetsParams):
                 if len(self._algos) > 1:  # row-by-row quantization.... (if rescale needed)
                     for row in range(algo_col.size(0)):
                         algo_dataset_index = int(round(algo_col[row].item() * (len(self._algos) - 1.0)))
-                        print("algo de-scaling. algo_col={} --> learnable index = {}"
-                              .format(algo_col, algo_dataset_index))
                         algo_col[row] = (self._algos[algo_dataset_index] - 1) / 31.0
-            # If categorical: proper transform has already been applied by super().get_full()? TODO check card issue
+            # If categorical: proper transform has not been applied
+            elif self.idx_helper.vst_param_learnable_model[4] == 'cat':
+                classes_one_hot = self._learnable_presets[:, self.idx_helper.full_to_learnable[4]]
+                classes = torch.argmax(classes_one_hot, dim=-1)  # classes = dataset algo indexes
+                # Actual algorithms must be found row-by-row...
+                for row in range(classes.size(-1)):
+                    full_presets[row, 4] = (self._algos[classes[row].item()] - 1) / 31.0
         return full_presets
 
     def get_learnable(self) -> torch.Tensor:
         learnable_presets = super().get_learnable()
         # Algo rescale not needed if this class was built from inferred presets
         if self.is_from_full_presets:
-            """ Transforms the floating-point algorithm parameter (32 values in [0.0, 1.0]) into a new quantized
-            float value (len(self.algos) values in [0.0, 1.0]). This new quantization uses the limited number
-            of algorithms used in this dataset, but cannot be used for Dexed audio rendering. """
-            if self.idx_helper.vst_param_learnable_model[4] == 'num':  # algo learnable: rescale needed (<32 values)
-                # Direct tensor-column modification
-                algo_col = learnable_presets[:, self._algo_learnable_index]  # Vector (len = batch size)
+            if self._algo_learnable_index is not None:
+                """ Transforms the floating-point algorithm parameter (32 values in [0.0, 1.0]) into a new quantized
+                float value (len(self.algos) values in [0.0, 1.0]). This new quantization uses the limited number
+                of algorithms used in this dataset, but cannot be used for Dexed audio rendering. """
+                # tensor-column - reuse for one-hot encoding
+                algo_col = self._full_presets[:, 4].detach().clone()  # Vector len: batch size
                 if len(self._algos) > 1:  # row-by-row quantization.... (if rescale needed)
                     for row in range(algo_col.size(0)):
                         algo_vst_index = int(round(algo_col[row].item() * 31.0))  # 32 values in [0.0, 1.0]
                         algo_dataset_index = self._algos.index(algo_vst_index + 1)  # algo numbers in [1, 32]
-                        algo_col[row] = algo_dataset_index / (len(self._algos) - 1.0)  # New algo scale
-            # If categorical: proper transform has already been applied by super().get_full()? TODO check card issue
+                        algo_col[row] = algo_dataset_index  # no new algo scale (to be used also for cat)
+                if isinstance(self._algo_learnable_index, Iterable):  # categorical (one hot extracted from new scale)
+                    n_classes = self.idx_helper.vst_param_cardinals[4]
+                    classes = torch.round(algo_col).type(torch.int64)  # index type required
+                    classes_one_hot = torch.nn.functional.one_hot(classes, num_classes=n_classes)
+                    learnable_presets[:, self._algo_learnable_index] = classes_one_hot.type(torch.float)
+                elif isinstance(self._algo_learnable_index, int):  # algo learn as num: rescale needed (<32 values)
+                    algo_col = algo_col / (len(self._algos) - 1.0)  # New algo scale
+                    learnable_presets[:, self._algo_learnable_index] = algo_col
+                else:
+                    raise ValueError("Unexpected vst param learnable model (expected iterable or int)")
         return learnable_presets
 

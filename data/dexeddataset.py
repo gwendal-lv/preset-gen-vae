@@ -6,6 +6,7 @@ See end of file.
 """
 import pathlib
 import json
+from typing import Optional
 
 import torch
 import torch.utils
@@ -27,6 +28,7 @@ class DexedDataset(abstractbasedataset.PresetDataset):
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
                  algos=None, operators=None,
+                 vst_params_learned_as_categorical: Optional[str] = None,
                  restrict_to_labels=None, constant_filter_and_tune_params=True,
                  prevent_SH_LFO=False,  # TODO re-implement
                  check_constrains_consistency=True
@@ -42,6 +44,9 @@ class DexedDataset(abstractbasedataset.PresetDataset):
         :param algos: List. Can be used to limit the DX7 algorithms included in this dataset. Set to None
             to use all available algorithms
         :param operators: List of ints, or None. Enables the specified operators only, or all of them if None.
+        :param vst_params_learned_as_categorical: 'all_num' to learn all vst params as numerical, 'vst_cat'
+            to learn vst cat params as categorical, or 'all<=x' to learn all vst params (including numerical) with
+            cardinality <= xxx (e.g. 8 or 32) as categorical
         :param restrict_to_labels: List of strings. If not None, presets of this dataset will be selected such
             that they are tagged with at least one of the given labels.
         :param constant_filter_and_tune_params: if True, the main filter and the main tune settings are default
@@ -64,15 +69,15 @@ class DexedDataset(abstractbasedataset.PresetDataset):
         self._total_nb_presets = dexed_db.presets_mat.shape[0]
         self._total_nb_params = dexed_db.presets_mat.shape[1]
         self._param_names = dexed_db.get_param_names()
-        # - - - Constraints on parameters, learnable parameters - - -
+        # - - - Constraints on parameters, learnable VST parameters - - -
         self.learnable_params_idx = list(range(0, dexed_db.presets_mat.shape[1]))
         if self.constant_filter_and_tune_params:  # (see dexed_db_explore.ipynb)
-            for idx in [0, 1, 2, 3, 13]:
-                self.learnable_params_idx.remove(idx)
+            for vst_idx in [0, 1, 2, 3, 13]:
+                self.learnable_params_idx.remove(vst_idx)
         for i_op in range(6):  # Search for disabled operators
             if not (i_op+1) in self._operators:  # If disabled: we remove all corresponding learnable params
-                for idx in range(21):  # Don't remove the 22nd param (OP on/off selector) yet
-                    self.learnable_params_idx.remove(23 + 22*i_op + idx)  # idx 23 is the first param of op 1
+                for vst_idx in range(21):  # Don't remove the 22nd param (OP on/off selector) yet
+                    self.learnable_params_idx.remove(23 + 22*i_op + vst_idx)  # idx 23 is the first param of op 1
         # Oscillators can be enabled or disabled, but OP SWITCHES are never learnable parameters
         for col in [44, 66, 88, 110, 132, 154]:
             self.learnable_params_idx.remove(col)
@@ -114,14 +119,35 @@ class DexedDataset(abstractbasedataset.PresetDataset):
             self._params_default_values[2] = 1.0
             self._params_default_values[3] = 0.5
             self._params_default_values[13] = 0.5
-        # None / Numerical / Categorical learnable status array
+        # - - - None / Numerical / Categorical learnable status array - - -
         self._vst_param_learnable_model = list()
-        for idx in range(self.total_nb_params):
-            if idx not in self.learnable_params_idx:
+        num_vst_learned_as_cat_cardinal_threshold = None
+        if vst_params_learned_as_categorical is not None:
+            if vst_params_learned_as_categorical.startswith('all<='):
+                # TODO CHECK THAT
+                num_vst_learned_as_cat_cardinal_threshold = int(vst_params_learned_as_categorical.replace('all<=', ''))
+            else:
+                assert vst_params_learned_as_categorical == 'vst_cat'
+        # We go through all VST params indexes
+        for vst_idx in range(self.total_nb_params):
+            if vst_idx not in self.learnable_params_idx:
                 self._vst_param_learnable_model.append(None)
             else:
-                # TODO categorical representation for some preset params
-                self._vst_param_learnable_model.append('num')  # Default: numerical
+                if vst_params_learned_as_categorical is None:  # Default: forced numerical only
+                    self._vst_param_learnable_model.append('num')
+                else:  # Mixed representations: is the VST param numerical?
+                    if vst_idx in dexed.Dexed.get_numerical_params_indexes():
+                        if num_vst_learned_as_cat_cardinal_threshold is None:  # If no threshold: learned as numerical
+                            self._vst_param_learnable_model.append('num')
+                        elif self._params_cardinality[vst_idx] <= num_vst_learned_as_cat_cardinal_threshold:
+                            self._vst_param_learnable_model.append('cat')  # If threshold: might be learned as categorical
+                        else:
+                            self._vst_param_learnable_model.append('num')
+                    # If categorical VST param: must be learned as cat (at this point)
+                    elif vst_idx in dexed.Dexed.get_categorical_params_indexes():
+                        self._vst_param_learnable_model.append('cat')
+                    else:
+                        raise ValueError("VST param idx={} is neither numerical nor categorical".format(vst_idx))
         # - - - Final initializations - - -
         self._preset_idx_helper = PresetIndexesHelper(self)
         self._load_spectrogram_stats()  # Must be called after super() ctor
@@ -284,15 +310,15 @@ class DexedDataset(abstractbasedataset.PresetDataset):
 if __name__ == "__main__":
 
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = True  # quite long (15min, full dataset, 1 midi note)
-    regenerate_spectrograms_stats = True  # approx 3 min
+    regenerate_wav = False  # quite long (15min, full dataset, 1 midi note)
+    regenerate_spectrograms_stats = False  # approx 3 min
 
     import sys
     sys.path.append(pathlib.Path(__file__).parent.parent)
     import config  # Dirty path trick to import config.py from project root dir
 
     #operators = config.model.dataset_synth_args[1]  # Custom operators limitation?
-    operators = [1, 2, 3, 4, 5, 6]
+    operators = [1, 2]
 
     # No label restriction, no normalization, etc...
     # But: OPERATORS LIMITATIONS and DEFAULT PARAM CONSTRAINTS (main params (filter, transpose,...) are constant)
@@ -300,14 +326,17 @@ if __name__ == "__main__":
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
                                  n_mel_bins=config.model.mel_bins,
                                  spectrogram_normalization=None,  # No normalization: we want to compute stats
-                                 algos=None,  # allow all algorithms
-                                 restrict_to_labels=None,
+                                 algos=[1, 8, 19],  # allow all algorithms
                                  operators=operators,  # Operators limitation (config.py)
+                                 # Params learned as categorical: maybe comment
+                                 vst_params_learned_as_categorical=config.model.synth_vst_params_learned_as_categorical,
+                                 restrict_to_labels=None,
                                  spectrogram_min_dB=config.model.spectrogram_min_dB,
                                  check_constrains_consistency=False)
-    for i in range(0):
+    print(dexed_dataset.preset_indexes_helper)
+    print(dexed_dataset)  # All files must be pre-rendered before printing
+    for i in range(100):
         test = dexed_dataset[i]  # try get an item - for debug purposes
-    #print(dexed_dataset)  # All files must be pre-rendered before printing
 
     if regenerate_wav:
         # WRITE ALL WAV FILES (approx. 10.5Go for 4.0s audio, 1 midi note)

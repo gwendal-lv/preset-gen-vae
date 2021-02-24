@@ -43,11 +43,13 @@ model.synth = 'dexed'
 model.synth_args_str = 'al*_op*_lab*'  # Auto-generated string (see end of script)
 # TODO categorical params (by full-preset index)
 model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
+# Possible values: None, 'vst_cat' or 'all<=xx' where xx is numerical params threshold cardinal
+model.synth_vst_params_learned_as_categorical = 'vst_cat'
 # flags/values to describe the dataset to be used
 model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
 # Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
 # Other synth: ...?
-model.dataset_synth_args = ([1, 2], [1, 2, 3])
+model.dataset_synth_args = ([1, 8, 19], [1, 2])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 

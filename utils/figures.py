@@ -3,6 +3,7 @@ Utilities for plotting various figures (spectrograms, ...)
 """
 
 from typing import Optional
+from collections.abc import Iterable
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,6 +14,7 @@ import librosa.display
 import logs.metrics
 
 from data.abstractbasedataset import PresetDataset
+from data.preset import PresetIndexesHelper
 
 
 # Width of a parameter for scatter/box/error plots
@@ -176,37 +178,41 @@ def plot_synth_preset_param(ref_preset, inferred_preset=None,
     return fig, ax
 
 
-def plot_synth_learnable_preset(learnable_preset, preset_UID=None, dataset=None, figsize=None):
+def plot_synth_learnable_preset(learnable_preset, idx_helper: PresetIndexesHelper, preset_UID=None, figsize=None):
     """ Plots a single learnable preset (provided as 1D Tensor) """
     n_params = learnable_preset.size(0)
+    assert n_params == idx_helper.learnable_preset_size
     fig, ax = plt.subplots(1, 1, figsize=(__param_width * n_params, 4))  # TODO dynamic fig size
-    # Params cardinality: deduced from the synth arg (str)
-    if dataset is not None:
-        if dataset.synth_name.lower() == 'dexed':
-            # Gets cardinality of *all* params (including non-learnable)
-            # Directly ask for quantized values
-            params_quant_values = [dataset.get_preset_param_quantized_steps(idx)
-                                   for idx in dataset.learnable_params_idx]
-            for i, y_values in enumerate(params_quant_values):
-                if y_values is not None:  # Discrete param
-                    marker = '_' if y_values.shape[0] > 1 else 'x'
-                    sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker=marker,
-                                    color='grey', ax=ax)
-        else:
-            raise NotImplementedError("Synth '{}' parameters cannot be displayed".format(dataset.synth_name))
+    learnable_param_indexes = range(idx_helper.learnable_preset_size)
+    # quantized values - plot now
+    params_quant_values = [idx_helper.get_learnable_param_quantized_steps(idx)
+                           for idx in learnable_param_indexes]
+    for i, y_values in enumerate(params_quant_values):
+        if y_values is not None:  # Discrete param only
+            marker = '_' if y_values.shape[0] > 1 else 'x'
+            sns.scatterplot(x=[i for _ in range(y_values.shape[0])], y=y_values, marker=marker,
+                            color='grey', ax=ax)
     # For easier seaborn-based plot: we use a pandas dataframe
     df = pd.DataFrame({'param_idx': range(n_params), 'ref_preset': learnable_preset})
-    learnable_param_indexes = dataset.learnable_params_idx if dataset is not None else None
-    df['is_learnable'] = [True for idx in range(n_params)]
+    df['is_learnable'] = [True for _ in range(n_params)]
     # Scatter plot for "faders" values
     sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=ax)
     ax.set_xticks(range(n_params))
-    if dataset is not None:
-        param_names = [dataset.preset_param_names[idx] for idx in dataset.learnable_params_idx]
-    else:
-        param_names = None
-    ax.set_xticklabels(['{}.{}'.format(idx, ('' if param_names is None else param_names[i]))
-                        for i, idx in enumerate(dataset.learnable_params_idx)])
+    # Param names - vst-param by vst-param
+    vst_param_names = idx_helper.vst_param_names
+    x_tick_labels = list()
+    # We do not actually care about the learnable index
+    for vst_idx, learnable_indexes in enumerate(idx_helper.full_to_learnable):
+        if learnable_indexes is not None:  # learnable only
+            if isinstance(learnable_indexes, Iterable):  # cat learnable representation
+                for i, _ in enumerate(learnable_indexes):
+                    if i == 0:
+                        x_tick_labels.append('{}.{}.{}'.format(vst_idx, i, vst_param_names[vst_idx]))
+                    else:
+                        x_tick_labels.append('{}.{}'.format(vst_idx, i))
+            else:  # numerical learnable representation
+                x_tick_labels.append('{}.{}'.format(vst_idx, vst_param_names[vst_idx]))
+    ax.set_xticklabels(x_tick_labels)
     ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, n_params-0.5])
     if preset_UID is not None:
         ax.set_title("Preset UID={}".format(preset_UID))

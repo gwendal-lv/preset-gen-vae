@@ -180,7 +180,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     @property
     @abstractmethod
     def total_nb_params(self):
-        """ Total count of constrained and free parameters of a preset. """
+        """ Total count of constrained and free VST parameters of a preset. """
         pass
 
     @property
