@@ -208,7 +208,6 @@ if __name__ == "__main__":
     print("\n============== PARAM DESC ==============\n")
     #print(diva.engine.get_plugin_parameters_description())
 
-    #dexed.assign_random_preset_short_release()
     #pres = dexed.preset_db.get_preset_values(0, plugin_format=True)
     #dexed.assign_preset_from_db(100)
     print("\n============== CURRENT PRESET ==============\n")

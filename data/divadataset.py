@@ -85,6 +85,7 @@ class DivaDataset(PresetDataset):
         # reload the VST to prevent hanging notes/sounds
         diva_renderer = diva.Diva()
         diva_renderer.assign_preset(preset_params)
+        diva_renderer.set_default_general_filter_and_tune_params()
         x_wav = diva_renderer.render_note(midi_note, midi_velocity, normalize=self.normalize_audio)
         return x_wav, diva_renderer.Fs
 
