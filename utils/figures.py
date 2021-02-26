@@ -169,7 +169,7 @@ def plot_synth_preset_param(ref_preset, inferred_preset=None,
     ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, len(ref_preset)-0.5])
     ax.get_legend().remove()
     if preset_UID is not None:
-        ax.set_title("Preset UID={}".format(preset_UID))
+        ax.set_title("Preset UID={} (VSTi numerical parameters)".format(preset_UID))
     plt.vlines(x=np.arange(len(ref_preset) + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
     # vertical "faders" separator lines
     for tick in ax.get_xticklabels():
@@ -215,7 +215,7 @@ def plot_synth_learnable_preset(learnable_preset, idx_helper: PresetIndexesHelpe
     ax.set_xticklabels(x_tick_labels)
     ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, n_params-0.5])
     if preset_UID is not None:
-        ax.set_title("Preset UID={}".format(preset_UID))
+        ax.set_title("Preset UID={} (learnable parameters)".format(preset_UID))
     plt.vlines(x=np.arange(n_params + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
     # vertical "faders" separator lines
     for tick in ax.get_xticklabels():
