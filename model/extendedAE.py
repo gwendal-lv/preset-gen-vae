@@ -2,6 +2,9 @@
 Defines 'Extended Auto-Encoders', which are basically spectrogram VAEs with an additional neural network
 which infers synth parameters values from latent space values.
 """
+
+from collections.abc import Iterable
+
 import torch
 import torch.nn as nn
 
@@ -16,14 +19,16 @@ class PresetActivation(nn.Module):
         super().__init__()
         self.idx_helper = idx_helper
         self.numerical_act = numerical_activation
+        self.categorical_act = nn.Softmax(dim=-1)  # Required for categorical cross-entropy loss
         # Pre-compute indexes lists (to use less CPU)
-        self.numerical_indexes = self.idx_helper.get_numerical_learnable_indexes()
-        # TODO categorical indexes
+        self.num_indexes = self.idx_helper.get_numerical_learnable_indexes()
+        self.cat_indexes = self.idx_helper.get_categorical_learnable_indexes()  # type: Iterable[Iterable]
 
     def forward(self, x):
         """ Applies per-parameter output activations using the PresetIndexesHelper attribute of this instance. """
-        x[:, self.numerical_indexes] = self.numerical_act(x[:, self.numerical_indexes])
-        # TODO categorical indexes
+        x[:, self.num_indexes] = self.numerical_act(x[:, self.num_indexes])
+        for cat_learnable_indexes in self.cat_indexes:  # type: Iterable
+            x[:, cat_learnable_indexes] = self.categorical_act(x[:, cat_learnable_indexes])
         return x
 
 

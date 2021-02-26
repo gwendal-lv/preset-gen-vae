@@ -33,6 +33,8 @@ def get_full_and_split_datasets(model_config, train_config):
         full_dataset = dataset.DexedDataset(** dataset.model_config_to_dataset_kwargs(model_config),
                                             algos=model_config.dataset_synth_args[0],
                                             operators=model_config.dataset_synth_args[1],
+                                            vst_params_learned_as_categorical=
+                                            model_config.synth_vst_params_learned_as_categorical,
                                             restrict_to_labels=model_config.dataset_labels)
     else:
         raise NotImplementedError("No dataset available for '{}': unrecognized synth.".format(model_config.synth))

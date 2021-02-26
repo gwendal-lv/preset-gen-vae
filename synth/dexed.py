@@ -437,7 +437,7 @@ class Dexed:
 
     @staticmethod
     def get_categorical_params_indexes():
-        indexes = [4, 6, 11, 12]  # algorithm, osc key sync, lfo key sync
+        indexes = [4, 6, 11, 12]  # algorithm, osc key sync, lfo key sync, lfo wave
         for i in range(6):  # operators
             indexes.append(32 + 22*i)  # mode (ratio or fixed frequency)
             indexes.append(39 + 22*i)  # L scale
