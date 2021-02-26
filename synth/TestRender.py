@@ -2,7 +2,7 @@ import os
 import pathlib
 import socket
 import time
-import sys
+
 import matplotlib.pyplot as plt
 import librenderman as rm
 import json
@@ -16,9 +16,9 @@ import pickle
 
 class PresetDatabase:
     def __init__(self, num_workers=None):
-        self.param_names = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_params.pkl", "rb"))
-        self.all_presets = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_presets.pkl", "rb"))
-        self.db_path = ("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets.pkl")
+        self.param_names = pickle.load(open("diva_presets/diva_params.pkl", "rb"))
+        self.all_presets = pickle.load(open("diva_presets/diva_presets.pkl", "rb"))
+        self.db_path = ("diva_presets/diva_presets.pkl")
 
     @staticmethod
     def get_db_path():
@@ -43,7 +43,7 @@ class PresetDatabase:
         else:
             preset_values = []
             for element in self.all_presets[idx]:
-                preset_values.append(element[1])
+                preset_values.append(element[idx])
             return preset_values
 
     @staticmethod
@@ -55,10 +55,13 @@ class PresetDatabase:
     def get_param_names(self):
         return self.param_names
 
-    def get_size_info(self):
+    def get_size_info(self): #CORRIGER
         """ Prints a detailed view of the size of this class and its main elements """
-        print("All params memory usage  : " + str(sys.getsizeof(self.param_names)/(2**20)) + " MB")
-        print("All presets memory usage : " + str(sys.getsizeof(self.all_presets)/(2**20)) + " MB")
+        main_db_size = self.all_presets.memory_usage(deep=True).values.sum()
+        preset_values_size = self.presets_mat.size * self.presets_mat.itemsize
+        return "Diva Presets Database class size: " \
+               "preset values matrix {:.1f} MB, presets dataframe {:.1f} MB"\
+            .format(preset_values_size/(2**20), main_db_size/(2**20))
 
     @staticmethod
     def _get_presets_folder():
@@ -153,38 +156,12 @@ class Diva:
         self.engine.set_patch(self.current_preset)
         return [v for _, v in self.current_preset]
 
-    @staticmethod
-    def get_param_cardinality(param_index):
-        """ Returns the number of possible values for a given parameter, or -1 if the param
-        is considered continuous (100 discrete values). """
-
-        index = {
-            1 or 2 or 7 or 13 or 17 or 19 or 40 or 41 or 42 or 51 or 52 or 95 or 111 or 112 or 113 or 114 or 115 or 116 or 117 or 118 or 119: 2,
-            121 or 123 or 124 or 125 or 126 or 127 or 129 or 133 or 142 or 156 or 157 or 158 or 169 or 183 or 187 or 222 or 226 or 263 or 270 or 272 or 273 or 280: 2,
-            16 or 38 or 49 or 120 or 128 or 174 or 179 or 207 or 218 or 246: 3,
-            18 or 39 or 56 or 66 or 100 or 130 or 139 or 159 or 216 or 255 or 257 or 260 or 271: 4,
-            6 or 50 or 146 or 147 or 178 or 217 or 261: 5,
-            5 or 101 or 102 or 259: 6,
-            278 or 279: 7,
-            4 or 57 or 67: 8,
-            262: 13,
-            60 or 63 or 70 or 73 or 77 or 78 or 79 or 80 or 81 or 82 or 83 or 84 or 103 or 105 or 107 or 109 or 135 or 137 or 144 or 150 or 152 or 161 or 163 or 165 or 170 or 172 or 268: 24,
-            11 or 12: 26,
-            14: 48,
-        }
-        return index.get(param_index, -1)
-
-
 if __name__ == "__main__":
 
     print("Machine: '{}' ({} CPUs)".format(socket.gethostname(), os.cpu_count()))
 
-
     t0 = time.time()
     diva_db = PresetDatabase()
-    print(diva_db._get_presets_folder())
-    print(diva_db.get_params_in_plugin_format(self = diva_db,params= diva_db.get_preset_values(555, plugin_format=False)))
-    diva_db.get_size_info()
     print("{} (loaded in {:.1f}s)".format(diva_db, time.time() - t0))
     names = diva_db.get_param_names()
     #print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
@@ -201,12 +178,11 @@ if __name__ == "__main__":
     diva = Diva()
     print("==============DIVA==============")
     print(diva)
-    #diva.assign_random_preset()
-    diva.assign_preset(patchTest)
+    diva.assign_random_preset()
     print("\n============== PATCH TEST VALUES NORMALIZED ==============\n")
     print(diva.set_default_general_filter_and_tune_params())
     print("\n============== PARAM DESC ==============\n")
-    #print(diva.engine.get_plugin_parameters_description())
+    print(diva.engine.get_plugin_parameters_description())
 
     #dexed.assign_random_preset_short_release()
     #pres = dexed.preset_db.get_preset_values(0, plugin_format=True)
