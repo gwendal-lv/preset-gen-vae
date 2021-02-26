@@ -183,14 +183,22 @@ class PresetIndexesHelper:
         return self._learnable_to_full
 
     def get_numerical_learnable_indexes(self):
-        """ Returns the list of indexes (learnable preset) of numerical parameters """
+        """ Returns the list of indexes (learnable preset) of numerical parameters in a learnable tensor. """
         numerical_indexes = list()
-        for i, learn_model in enumerate(self._vst_param_learnable_model):
+        for vst_idx, learn_model in enumerate(self._vst_param_learnable_model):
             if learn_model == 'num':
-                numerical_indexes.append(self._full_to_learnable[i])  # is an int
+                assert isinstance(self._full_to_learnable[vst_idx], int)  # extra check
+                numerical_indexes.append(self._full_to_learnable[vst_idx])
         return numerical_indexes
 
-    # TODO get_categorical_learnable_indexes(self):
+    def get_categorical_learnable_indexes(self):
+        """ Returns the list of lists of indexes (learnable preset) of categorical parameters in a learnable tensor. """
+        categorical_indexes = list()
+        for vst_idx, learn_model in enumerate(self._vst_param_learnable_model):
+            if learn_model == 'cat':
+                assert isinstance(self._full_to_learnable[vst_idx], Iterable)  # extra check
+                categorical_indexes.append(self._full_to_learnable[vst_idx])
+        return categorical_indexes
 
     def get_learnable_param_quantized_steps(self, idx):
         """ Returns None for a continuous learnable output, actual quantized steps for a discrete-numerical output,

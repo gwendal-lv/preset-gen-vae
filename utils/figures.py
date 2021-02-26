@@ -229,6 +229,7 @@ def plot_synth_preset_error(param_batch_errors, dataset=None, figsize=None):
 
     :param param_batch_errors: 2D Tensor of learnable synth parameters error
     :param dataset: (optional) PresetDataset class, to improve the display (param names, cardinality, ...) """
+    assert False  # FIXME does not work with categorical learnable parameters -
     # init
     n_params = param_batch_errors.size()[1]
     if dataset is not None:
