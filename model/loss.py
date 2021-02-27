@@ -105,6 +105,7 @@ class QuantizedNumericalParamsLoss:
         The type of representation has been stored in self.idx_helper """
         # Partial tensors (for final loss computation)
         minibatch_size = u_in.size(0)
+        # TODO pre-allocate tensors... concat is extremely slow (+1.0s (+15%) per batch)
         u_in_part = torch.empty((minibatch_size, 0), device=u_in.device, requires_grad=False)
         u_out_part = torch.empty((minibatch_size, 0), device=u_in.device, requires_grad=False)
         # quantize numerical learnable representations
@@ -116,10 +117,15 @@ class QuantizedNumericalParamsLoss:
                 cardinal = self.idx_helper.vst_param_cardinals[vst_idx]
                 param_batch = torch.round(param_batch * (cardinal - 1.0)) / (cardinal - 1.0)
             u_out_part = torch.cat((u_out_part, param_batch), dim=1)  # column-by-column matrix
-        # TODO convert one-hot encoded categorical learnable representations to (quantized) numerical
+        # convert one-hot encoded categorical learnable representations to (quantized) numerical
         for vst_idx, learn_indexes in self.idx_helper.num_idx_learned_as_cat.items():
-            raise NotImplementedError("TODO cat to num conversion")
-        return self.numerical_loss(u_in_part, u_out_part)
+            cardinal = len(learn_indexes)
+            # Classes as column-vectors (for concatenation)
+            in_classes = torch.unsqueeze(torch.argmax(u_in[:, learn_indexes], dim=-1).type(torch.float), dim=1)
+            u_in_part = torch.cat((u_in_part, in_classes / (cardinal-1.0)), dim=1)
+            out_classes = torch.unsqueeze(torch.argmax(u_out[:, learn_indexes], dim=-1).type(torch.float), dim=1)
+            u_out_part = torch.cat((u_out_part, out_classes / (cardinal-1.0)), dim=1)
+        return self.numerical_loss(u_out_part, u_in_part)  # Positive diff. if output > input
 
 
 

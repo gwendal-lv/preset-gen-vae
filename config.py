@@ -17,7 +17,7 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '03_vstcat_0.1loss'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '06_vstcat32_DEVTEST'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -44,7 +44,7 @@ model.synth_args_str = 'al*_op*_lab*'  # Auto-generated string (see end of scrip
 # TODO categorical params (by full-preset index)
 model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
 # Possible values: None, 'vst_cat' or 'all<=xx' where xx is numerical params threshold cardinal
-model.synth_vst_params_learned_as_categorical = 'vst_cat'
+model.synth_vst_params_learned_as_categorical = 'all<=32'
 # flags/values to describe the dataset to be used
 model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
 # Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)

@@ -357,7 +357,8 @@ class Dexed:
     @staticmethod
     def get_midi_key_related_param_indexes():
         """ Returns a list of indexes of all DX7 parameters that apply a modulation depending on the MIDI key
-        (note and/or velocity) """
+        (note and/or velocity). These will be very hard to learn without providing multiple-notes input
+        to the encoding network. """
         # (6. 'OSC KEY SYNC' (LFO) does NOT depend on the midi note (it syncs or not LFO phase on midi event).)
         # All the KEY L/R stuff (with breakpoint at some MIDI note) effects are really dependant on the MIDI key.
         # 36. breakpoint.
@@ -371,7 +372,8 @@ class Dexed:
     @staticmethod
     def get_mod_wheel_related_param_indexes():
         """ Returns a list of indexes of all DX7 parameters that influence sound depending on the MIDI
-         mod wheel. """
+        mod wheel. These should always be learned because they are also related to LFO modulation
+        (see https://fr.yamaha.com/files/download/other_assets/9/333979/DX7E1.pdf page 26) """
         # OPx A MOD SENS + Pitch general mod sens
         return [(42 + 22*i) for i in range(6)] + [14]
 
@@ -418,7 +420,7 @@ class Dexed:
     @staticmethod
     def get_numerical_params_indexes():
         indexes = [0, 1, 2, 3, 5,  # cutoff, reso, output, master tune, feedback (card:8)
-                   7, 8, 9, 10,  # lfo speed, lfo delay, lfo pm depth, lfo am depth
+                   7, 8, 9, 10,  # lfo speed, lfo delay (before LFO actually modulates), lfo pm depth, lfo am depth
                    13, 14, 15, 16, 17, 18, 19, 20, 21, 22]  # transpose, pitch mod sensitivity, pitch EG rates/levels
         for i in range(6):  # operators
             for j in [23, 24, 25, 26, 27, 28, 29, 30]:  # rates and levels

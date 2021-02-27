@@ -41,9 +41,11 @@ class PresetIndexesHelper:
             self._numerical_vst_params = [i for i in range(self.full_preset_size)]
             self._categorical_vst_params = []
             self._learnable_preset_size = nb_params
+            self.synth_name = "generic_synth"
         # Actual construction based on a dataset
         else:
             assert nb_params is None
+            self.synth_name = dataset.synth_name
             self._param_names = dataset.preset_param_names
             self._vst_param_learnable_model = dataset.vst_param_learnable_model
             self._param_cardinals = [dataset.get_preset_param_cardinality(vst_idx, learnable_representation=True)

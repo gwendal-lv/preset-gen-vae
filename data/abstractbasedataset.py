@@ -22,7 +22,8 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                  n_fft, fft_hop,  # ftt 1024 hop=512: spectrogram is approx. the size of 5.0s@22.05kHz audio
                  midi_note=60, midi_velocity=100,  # TODO default values - try others
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
-                 normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max'
+                 normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
+                 learn_mod_wheel_params=False
                  ):
         """
         Abstract Base Class for any synthesizer presets dataset.
@@ -39,6 +40,8 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         :param spectrogram_min_dB:  Noise-floor threshold value for log-scale spectrograms
         :param spectrogram_normalization: 'min_max' to get output spectrogram values in [-1, 1], or 'mean_std'
             to get zero-mean unit-variance output spectrograms. None to disable normalization.
+        :param learn_mod_wheel_params: Indicates whether parameters related to the MIDI modulation wheel should
+            be learned or not.
         """
         self.note_duration = note_duration
         self.n_fft = n_fft
@@ -49,6 +52,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         self.mel_fmin = mel_fmin
         self.mel_fmax = mel_fmax
         self.normalize_audio = normalize_audio
+        self.learn_mod_wheel_params = learn_mod_wheel_params
         # - - - - - Attributes to be set by the child concrete class - - - - -
         self.valid_preset_UIDs = np.zeros((0,))  # UIDs (may be indexes) of valid presets for this dataset
         self.learnable_params_idx = list()  # Indexes of learnable VSTi params (some params may be constant or unused)

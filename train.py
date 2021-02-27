@@ -216,13 +216,13 @@ def train_config():
                 scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
                 scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(u_in, u_out))
                 scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(u_in, u_out))
-                # in/out learnable preset converted to VST-compatible presets?
-                # u_error = torch.cat([u_error, u_in - u_out])  # FIXME
-                # tensorboard samples for minibatch 'eval' [0] only
-                if i == 0 and should_plot:
-                    fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
-                                                             max_nb_specs=config.train.logged_samples_count,
-                                                             add_colorbar=True)
+                # Validation plots
+                if should_plot:
+                    u_error = torch.cat([u_error, u_out - u_in])  # Full-batch error storage
+                    if i == 0:  # tensorboard samples for minibatch 'eval' [0] only
+                        fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
+                                                                 max_nb_specs=config.train.logged_samples_count,
+                                                                 add_colorbar=True)
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
         scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
         # Dynamic LR scheduling depends on validation performance
@@ -239,8 +239,10 @@ def train_config():
             logger.tensorboard.add_figure('LatentMu', fig, epoch)
             fig, _ = utils.figures.plot_spearman_correlation(latent_metric=scalars['LatCorr/Valid'])
             logger.tensorboard.add_figure('LatentEntanglement', fig, epoch)
-            # fig, _ = utils.figures.plot_synth_preset_error(u_error.detach().cpu(), dataset=full_dataset)
-            # logger.tensorboard.add_figure('SynthControlsError', fig, epoch)  # FIXME
+            if u_error.size(0) > 0:  # u_error might be empty on early_stop
+                fig, _ = utils.figures.plot_synth_preset_error(u_error.detach().cpu(),
+                                                               full_dataset.preset_indexes_helper)
+                logger.tensorboard.add_figure('SynthControlsError', fig, epoch)
         metrics['epochs'] = epoch + 1
         metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
