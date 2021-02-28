@@ -12,10 +12,16 @@ from data.preset import PresetIndexesHelper
 
 
 class PresetActivation(nn.Module):
-    """ Applies the appropriate activations (e.g. sigmoid, softmax, ...) to different neurons or groups of neurons
-    of a given input layer. """
+    """ Applies the appropriate activations (e.g. sigmoid, hardtanh, softmax, ...) to different neurons
+    or groups of neurons of a given input layer. """
     def __init__(self, idx_helper: PresetIndexesHelper,
-                 numerical_activation=nn.Sigmoid()):
+                 numerical_activation=nn.Hardtanh(min_val=0.0, max_val=1.0)):
+        """
+
+        :param idx_helper:
+        :param numerical_activation: Should be nn.Hardtanh if numerical params often reach 0.0 and 1.0 GT values,
+            or nn.Sigmoid to perform a smooth regression without extreme 0.0 and 1.0 values.
+        """
         super().__init__()
         self.idx_helper = idx_helper
         self.numerical_act = numerical_activation
