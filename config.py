@@ -17,7 +17,7 @@ from utils.config import _Config  # Empty class
 
 model = _Config()
 model.name = "ExtVAE0"
-model.run_name = '06_vstcat32_DEVTEST'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '12_DEV_TESTS'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -49,7 +49,7 @@ model.synth_vst_params_learned_as_categorical = 'all<=32'
 model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
 # Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
 # Other synth: ...?
-model.dataset_synth_args = ([1, 2], [1, 2])
+model.dataset_synth_args = ([1, 2, 7, 8, 9, 14], [1, 2, 3])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -61,7 +61,7 @@ train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datase
 train.k_folds = 5  # TODO implement
 train.current_k_fold = 1  # TODO implement
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
-train.n_epochs = 400  # Total number of epochs (including previous training epochs)
+train.n_epochs = 1000  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
@@ -81,7 +81,7 @@ train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
 train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
-# Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss'... All required losses will be summed
+# Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss', ... All required losses will be summed
 train.scheduler_loss = ('ReconsLoss', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 15  # Longer patience with smaller datasets

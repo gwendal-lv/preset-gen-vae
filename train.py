@@ -182,10 +182,11 @@ def train_config():
                     lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    cont_loss = controls_criterion(u_in, u_out)
-                    scalars['Controls/BackpropLoss/Train'].append(cont_loss)
+                    # monitoring losses - they do not modify input tensors
                     scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(u_in, u_out))
                     scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(u_in, u_out))
+                    cont_loss = controls_criterion(u_in, u_out)  # u_in and u_out might be modified by this criterion
+                    scalars['Controls/BackpropLoss/Train'].append(cont_loss)
                     (recons_loss + lat_loss + cont_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
@@ -211,11 +212,12 @@ def train_config():
                 scalars['ReconsLoss/Valid'].append(recons_loss)
                 lat_loss = latent_criterion(z_mu_logvar[:, 0, :], z_mu_logvar[:, 1, :])
                 scalars['LatLoss/Valid'].append(lat_loss)
-                # lat_loss *= scalars['Sched/beta'].get(epoch)  # Useless without backprop
-                cont_loss = controls_criterion(u_in, u_out)
-                scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
+                # lat_loss *= scalars['Sched/beta'].get(epoch)  # Warmup factor: useless for monitoring
+                # monitoring losses - they do not modify input tensors
                 scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(u_in, u_out))
                 scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(u_in, u_out))
+                cont_loss = controls_criterion(u_in, u_out)  # u_in and u_out might be modified by the criterion
+                scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
                 # Validation plots
                 if should_plot:
                     u_error = torch.cat([u_error, u_out - u_in])  # Full-batch error storage
