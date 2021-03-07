@@ -99,7 +99,11 @@ class LatentMetric:
         self._avg_abs_corr_spearman_zerodiag = -1.0
 
     def append(self, z_mu_logvar, z_sampled):
-        """ Internally duplicates the latent values of a minibatch """
+        """
+        Internally duplicates the latent values of a minibatch
+
+        TODO add flow output z_K_sampled argument
+        """
         # Tensor must be cloned before detach!  TODO tester copie sauvage?
         self._z_buf['mu'] = z_mu_logvar[:, 0, :].clone().detach().cpu().numpy()
         # TODO process other keys if necessary

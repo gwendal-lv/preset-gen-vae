@@ -7,6 +7,24 @@ import torch.nn as nn
 
 from data.preset import PresetIndexesHelper
 
+
+class L2Loss:
+    """
+    L2 (squared difference) loss, with customizable normalization options.
+
+    When used to model the reconstruction probability p_theta( x | zK ), normalization has strong
+    implications on the p_theta( x | zK ) model itself.
+    E.g., for a 1-element batch, the non-normalized L2 loss implies a learned mean, fixed 1/√2 std
+    gaussian model for each element of x.
+
+    By normalizing the L2 error (i.e. MSE error), the fixed std is multiplied by √(nb of elements of x)
+    (e.g. approx *300 for a 250x350 pixels spectrogram)
+
+    Normalization over batch dimension should always be performed (monte-carlo log-proba estimation).
+    """
+    pass  # TODO
+
+
 # TODO Spectral Convergence
 
 

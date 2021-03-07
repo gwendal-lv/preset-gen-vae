@@ -12,17 +12,16 @@ parameters, please only use simple types such as string, ints, floats, tuples (n
 
 
 import datetime
-from utils.config import _Config  # Empty class
+from utils.config import _Config  # Empty class - to ease JSON serialization of this file
 
 
 model = _Config()
-model.name = "ExtVAE0"
-model.run_name = '12_DEV_TESTS'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "ExtVAE1"
+model.run_name = '05_vaeflow_slower_warmup'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
-model.params_regression = 'mlp'  # Parameters regression model
-model.params_regression_architecture = '3l1024'
+model.params_regression_architecture = 'mlp_3l1024'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
@@ -33,8 +32,9 @@ model.spectrogram_min_dB = -120.0
 # (513, 433): audio 5.0s, fft size 1024, fft hop 256
 # (257, 347): audio 4.0s, fft size 512 (or fft 1024 w/ mel_bins 257), fft hop 256
 model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from audio/stft params
-# Latent space dimension
-model.dim_z = 256
+model.dim_z = 256  # Latent space dimension
+model.latent_flows_count = 4  # = K, number of flow transforms from z_0 to z_K
+model.latent_flows_hidden_features = 200  # Features of the MLPs that compute affine coefficients of the AR transforms
 # Modeling of synth controls probability distributions
 model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
 # TODO which loss precisely?
@@ -64,28 +64,32 @@ train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will 
 train.n_epochs = 1000  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
-train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD
-train.normalize_latent_loss = True  # Normalize the latent over z-dimension
-train.ae_reconstruction_loss = 'MSE'  # TODO try spectral convergence?
-# TODO loss types for controls... different losses for learning and evaluation
+train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE. Specific loss for Flow VAE
+# Losses normalization allow to get losses in the same order of magnitude, but prevents to optimize the actual ELBO
+# When un-normalized, the reconstruction loss (log-probability of a multivariate gaussian) is orders of magnitude
+# bigger than other losses.
+train.normalize_losses = True  # Normalize all losses over the vector-dimension (e.g. spectrogram pixels count, D, ...)
+train.ae_reconstruction_loss = 'MSE'  # Implies a fixed-variance gaussian model for spectrogram pixels
 train.metrics = ('ReconsLoss', 'LatLoss')  # unused... metrics currently hardcoded in train.py
 
+# TODO train regression network alone when full-train has finished
+#    that requires two optimizers and two schedulers (one full-model, one for regression)
 train.optimizer = 'Adam'
 train.initial_learning_rate = 2e-4
 train.adam_betas = (0.9, 0.999)  # default (0.9, 0.999)
 train.weight_decay = 1e-4  # Dynamic weight decay?
 train.fc_dropout = 0.2
 train.beta = 1.0  # Regularization factor for the latent loss
-train.beta_start_value = 0.5
-train.beta_warmup_epochs = 10  # Epochs of warmup increase from 0.0 to beta
+train.beta_start_value = 0.1  # 0.5 works quite well (10 warmup epochs). Cannot be zero (reconstruction diverges)
+train.beta_warmup_epochs = 100  # Epochs of warmup increase from 0.0 to beta
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
 train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
 # Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss', ... All required losses will be summed
 train.scheduler_loss = ('ReconsLoss', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
-train.scheduler_patience = 15  # Longer patience with smaller datasets
-train.scheduler_threshold = 1e-3
+train.scheduler_patience = 20  # Longer patience with smaller datasets and quite unstable trains TODO increase to 30
+train.scheduler_threshold = 1e-4
 train.early_stop_lr_threshold = 1e-7  # Training considered "dead" when dynamic LR reaches this value
 
 train.verbosity = 2  # 0: no console output --> 3: fully-detailed per-batch console output
