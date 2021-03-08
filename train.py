@@ -104,6 +104,8 @@ def train_config():
         raise NotImplementedError()
     controls_accuracy_criterion = model.loss.CategoricalParamsAccuracy(full_dataset.preset_indexes_helper,
                                                                        reduce=True, percentage_output=True)
+    # Stabilizing loss for flow-based latent space
+    flow_input_dkl = model.loss.GaussianDkl(normalize=config.train.normalize_losses)
 
 
     # ========== Scalars, metrics, images and audio to be tracked in Tensorboard ==========
@@ -118,6 +120,9 @@ def train_config():
                'LatCorr/Train': LatentMetric(config.model.dim_z, len(dataset['train'])),
                'LatCorr/Valid': LatentMetric(config.model.dim_z, len(dataset['validation'])),
                'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
+               'Sched/LRwarmup': LinearDynamicParam(config.train.lr_warmup_start_factor, 1.0,
+                                                    end_epoch=config.train.lr_warmup_epochs,
+                                                    current_epoch=config.train.start_epoch),
                'Sched/beta': LinearDynamicParam(config.train.beta_start_value, config.train.beta,
                                                 end_epoch=config.train.beta_warmup_epochs,
                                                 current_epoch=config.train.start_epoch)}
@@ -157,10 +162,15 @@ def train_config():
 
     # ========== Model training epochs ==========
     for epoch in range(config.train.start_epoch, config.train.n_epochs):
-        # = = = = = Re-init of epoch metrics = = = = =
+        # = = = = = Re-init of epoch metrics and useful scalars (warmup ramps, ...) = = = = =
         for _, s in scalars.items():
             s.on_new_epoch()
         should_plot = (epoch % config.train.plot_period == 0)
+
+        # = = = = = LR warmup (bypasses the scheduler during first epochs) = = = = =
+        if epoch <= config.train.lr_warmup_epochs:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = scalars['Sched/LRwarmup'].get(epoch) * config.train.initial_learning_rate
 
         # = = = = = Train all mini-batches (optional profiling) = = = = =
         # when profiling is disabled: true no-op context manager, and prof is None
@@ -188,7 +198,11 @@ def train_config():
                     scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_in, v_out))
                     cont_loss = controls_criterion(v_in, v_out)  # u_in and u_out might be modified by this criterion
                     scalars['Controls/BackpropLoss/Train'].append(cont_loss)
-                    (recons_loss + lat_loss + cont_loss).backward()  # Actual backpropagation is here
+                    if extended_ae_model.is_flow_based_latent_space:  # Flow training stabilization loss?
+                        flow_input_loss = 0.1 * flow_input_dkl(z_0_mu_logvar[:, 0, :], z_0_mu_logvar[:, 1, :])
+                    else:
+                        flow_input_loss = 0.0
+                    (recons_loss + lat_loss + cont_loss + flow_input_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
                 logger.on_minibatch_finished(i)

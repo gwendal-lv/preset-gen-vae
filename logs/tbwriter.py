@@ -83,13 +83,13 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         :return: None
         """
         metrics_dict = dict()
-        for k, v in metrics.items():
+        for k, metric in metrics.items():
             if isinstance(metrics[k], BufferedMetric):
                 try:
-                    metrics_dict[k] = v.mean()
+                    metrics_dict[k] = metric.mean
                 except ValueError:
                     metrics_dict[k] = 0  # TODO appropriate default metric value?
             else:
-                metrics_dict[k] = v
+                metrics_dict[k] = metric
         self.add_hparams(self.hyper_params, metrics_dict, hparam_domain_discrete=None)
 

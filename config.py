@@ -16,8 +16,8 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 
 model = _Config()
-model.name = "ExtVAE1"
-model.run_name = '05_vaeflow_slower_warmup'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "ExtVAE2"
+model.run_name = '11_lr_warmup'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
@@ -75,7 +75,12 @@ train.metrics = ('ReconsLoss', 'LatLoss')  # unused... metrics currently hardcod
 # TODO train regression network alone when full-train has finished
 #    that requires two optimizers and two schedulers (one full-model, one for regression)
 train.optimizer = 'Adam'
-train.initial_learning_rate = 2e-4
+# Maximal learning rate (reached after warmup, then reduced on plateaus)
+#    TODO decrease LR if non-normalized losses (which are expected to be at least 2 orders of magnitude bigger)
+train.initial_learning_rate = 3e-4
+# Learning rate warmup (see https://arxiv.org/abs/1706.02677)
+train.lr_warmup_epochs = 10
+train.lr_warmup_start_factor = 0.1
 train.adam_betas = (0.9, 0.999)  # default (0.9, 0.999)
 train.weight_decay = 1e-4  # Dynamic weight decay?
 train.fc_dropout = 0.2
@@ -90,6 +95,7 @@ train.scheduler_loss = ('ReconsLoss', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
 train.scheduler_patience = 20  # Longer patience with smaller datasets and quite unstable trains TODO increase to 30
 train.scheduler_threshold = 1e-4
+# TODO different threshold for non-normalized losses (LR is much smaller)
 train.early_stop_lr_threshold = 1e-7  # Training considered "dead" when dynamic LR reaches this value
 
 train.verbosity = 2  # 0: no console output --> 3: fully-detailed per-batch console output

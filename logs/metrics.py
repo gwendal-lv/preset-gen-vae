@@ -25,6 +25,7 @@ class BufferedMetric:
         if len(self.buffer) > self.buffer_size:
             self.buffer.popleft()
 
+    @property
     def mean(self):
         if len(self.buffer) == 0:
             raise ValueError()
@@ -35,15 +36,19 @@ class SimpleMetric:
     """ A very simple class for storing a metric, which provides EpochMetric-compatible methods """
     def __init__(self, value=0.0):
         if isinstance(value, torch.Tensor):
-            self.value = value.item()
+            self._value = value.item()
         else:
-            self.value = value
+            self._value = value
 
     def on_new_epoch(self):
         return None
 
     def get(self):
-        return self.value
+        return self._value
+
+    @property
+    def value(self):
+        return self.get()
 
 
 class EpochMetric:
@@ -72,6 +77,10 @@ class EpochMetric:
         if len(self.buffer) == 0:
             raise ValueError()
         return np.asarray(self.buffer).mean()
+
+    @property
+    def value(self):
+        return self.get()
 
 
 class LatentMetric:

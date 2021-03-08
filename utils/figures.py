@@ -90,7 +90,7 @@ def plot_latent_distributions_stats(latent_metric: logs.metrics.LatentMetric,
         figsize = (__param_width * z_mu.shape[1], 3)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     sns.boxplot(data=z_mu, ax=ax, fliersize=0.3, linewidth=0.5)
-    ax.set(xlabel='z', ylabel='$q_{\phi}(z|x) : \mu$')
+    ax.set(xlabel='z', ylabel='$q_{\phi}(z_0|x) : \mu$')
     for tick in ax.get_xticklabels():
         tick.set_rotation(90)
         tick.set_fontsize(8)

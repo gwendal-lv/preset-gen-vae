@@ -3,8 +3,8 @@
 class LinearDynamicParam:
     """ Hyper-Parameter which is able to automatically increase or decrease at each epoch.
     It provides the same methods as a metric (see logs/metrics.py) and can be easily used with tensorboard. """
-    def __init__(self, start_value, end_value, start_epoch=0, end_epoch=10, current_epoch=0):
-        self.current_epoch = current_epoch
+    def __init__(self, start_value, end_value, start_epoch=0, end_epoch=10, current_epoch=-1):
+        self.current_epoch = current_epoch - 1  # This value will be incremented when epoch actually starts
         self.start_value = start_value
         self.end_value = end_value
         self.start_epoch = start_epoch
@@ -29,3 +29,9 @@ class LinearDynamicParam:
             offset_epochs = current_epoch - self.start_epoch
             return self.start_value + (self.end_value - self.start_value) * offset_epochs\
                                             / (self.end_epoch - self.start_epoch)
+
+    @property
+    def value(self):
+        return self.get()
+
+
