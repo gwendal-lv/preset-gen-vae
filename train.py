@@ -14,6 +14,7 @@ import contextlib
 import mkl
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim
 from torch.autograd import profiler
 
@@ -88,20 +89,17 @@ def train_config():
 
 
     # ========== Losses (criterion functions) ==========
-    # Training losses (for backprop) and Metrics losses and accuracies
+    # Training losses (for backprop) and Metrics (monitoring) losses and accuracies
     # Some losses are defined in the models themselves (eventually: most losses will be computed by model classes)
-    if config.train.ae_reconstruction_loss == 'MSE':
+    if config.train.normalize_losses:  # Reconstruction backprop loss
         reconstruction_criterion = nn.MSELoss(reduction='mean')
     else:
-        raise NotImplementedError()
-    if config.model.controls_losses == 'MSE':
-        controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper,
-                                                        numerical_loss=nn.MSELoss(reduction='mean'))
-        controls_num_eval_criterion =\
-            model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
-                                                    numerical_loss=nn.MSELoss(reduction='mean'))
-    else:
-        raise NotImplementedError()
+        reconstruction_criterion = model.loss.L2Loss()
+    # Controls backprop loss
+    controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper, config.train.normalize_losses)
+    # Monitoring losses always remain the same
+    controls_num_eval_criterion = model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
+                                                                          numerical_loss=nn.MSELoss(reduction='mean'))
     controls_accuracy_criterion = model.loss.CategoricalParamsAccuracy(full_dataset.preset_indexes_helper,
                                                                        reduce=True, percentage_output=True)
     # Stabilizing loss for flow-based latent space
@@ -109,16 +107,20 @@ def train_config():
 
 
     # ========== Scalars, metrics, images and audio to be tracked in Tensorboard ==========
-    scalars = {'ReconsLoss/Train': EpochMetric(), 'ReconsLoss/Valid': EpochMetric(),
-               'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
-               'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
-               # Controls losses used for backprop
+    scalars = {  # Reconstruction loss (variable scale) + monitoring metrics comparable across all models
+               'ReconsLoss/Backprop/Train': EpochMetric(), 'ReconsLoss/Backprop/Valid': EpochMetric(),
+               'ReconsLoss/MSE/Train': EpochMetric(), 'ReconsLoss/MSE/Valid': EpochMetric(),
+               # 'ReconsLoss/SC/Train': EpochMetric(), 'ReconsLoss/SC/Valid': EpochMetric(),  # TODO
+               # Controls losses used for backprop + monitoring metrics (quantized numerical loss, categorical accuracy)
                'Controls/BackpropLoss/Train': EpochMetric(), 'Controls/BackpropLoss/Valid': EpochMetric(),
-               # Other controls scalars (quantized numerical params loss, categorical params accuracy)
                'Controls/QLoss/Train': EpochMetric(), 'Controls/QLoss/Valid': EpochMetric(),
                'Controls/Accuracy/Train': EpochMetric(), 'Controls/Accuracy/Valid': EpochMetric(),
+               # Latent-space and VAE losses
+               'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
+               'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
                'LatCorr/Train': LatentMetric(config.model.dim_z, len(dataset['train'])),
                'LatCorr/Valid': LatentMetric(config.model.dim_z, len(dataset['validation'])),
+               # Other misc. metrics
                'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
                'Sched/LRwarmup': LinearDynamicParam(config.train.lr_warmup_start_factor, 1.0,
                                                     end_epoch=config.train.lr_warmup_epochs,
@@ -127,13 +129,12 @@ def train_config():
                                                 end_epoch=config.train.beta_warmup_epochs,
                                                 current_epoch=config.train.start_epoch)}
     # Validation metrics have a '_' suffix to be different from scalars (tensorboard mixes them)
-    metrics = {'ReconsLoss/Valid_': logs.metrics.BufferedMetric(),
+    metrics = {'ReconsLoss/MSE/Valid_': logs.metrics.BufferedMetric(),
                'LatLoss/Valid_': logs.metrics.BufferedMetric(),
                'LatCorr/Valid_': logs.metrics.BufferedMetric(),
                'Controls/QLoss/Valid_': logs.metrics.BufferedMetric(),
                'Controls/Accuracy/Valid_': logs.metrics.BufferedMetric(),
                'epochs': config.train.start_epoch}
-    # TODO check metrics as required in config.py
     logger.tensorboard.init_hparams_and_metrics(metrics)  # hparams added knowing config.*
 
 
@@ -188,14 +189,11 @@ def train_config():
                 scalars['LatCorr/Train'].append(z_0_mu_logvar, z_0_sampled)  # TODO store also z_K_sampled
                 with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                     recons_loss = reconstruction_criterion(x_out, x_in)
-                    scalars['ReconsLoss/Train'].append(recons_loss)
+                    scalars['ReconsLoss/Backprop/Train'].append(recons_loss)
                     # Latent loss computed on 1 GPU using the ae_model itself (not its parallelized version)
                     lat_loss = extended_ae_model.latent_loss(z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac)
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    # monitoring losses - they do not modify input tensors
-                    scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_in, v_out))
-                    scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_in, v_out))
                     cont_loss = controls_criterion(v_in, v_out)  # u_in and u_out might be modified by this criterion
                     scalars['Controls/BackpropLoss/Train'].append(cont_loss)
                     if extended_ae_model.is_flow_based_latent_space:  # Flow training stabilization loss?
@@ -203,6 +201,10 @@ def train_config():
                     else:
                         flow_input_loss = 0.0
                     (recons_loss + lat_loss + cont_loss + flow_input_loss).backward()  # Actual backpropagation is here
+                # Monitoring losses
+                scalars['ReconsLoss/MSE/Train'].append(F.mse_loss(x_out, x_in, reduction='mean'))
+                scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_in, v_out))
+                scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_in, v_out))
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
                 logger.on_minibatch_finished(i)
@@ -213,7 +215,8 @@ def train_config():
             logger.save_profiler_results(prof, config.train.profiler_full_trace)
         if config.train.profiler_full_trace:
             break  # Forced training stop
-        scalars['VAELoss/Train'] = SimpleMetric(scalars['ReconsLoss/Train'].get() + scalars['LatLoss/Train'].get())
+        scalars['VAELoss/Train'] = SimpleMetric(scalars['ReconsLoss/Backprop/Train'].get()
+                                                + scalars['LatLoss/Train'].get())
 
         # = = = = = Evaluation on validation dataset (no profiling) = = = = =
         with torch.no_grad():
@@ -226,15 +229,16 @@ def train_config():
                 v_out = reg_model_parallel(z_K_sampled)
                 scalars['LatCorr/Valid'].append(z_0_mu_logvar, z_0_sampled)  # TODO add z_K
                 recons_loss = reconstruction_criterion(x_out, x_in)
-                scalars['ReconsLoss/Valid'].append(recons_loss)
+                scalars['ReconsLoss/Backprop/Valid'].append(recons_loss)
                 lat_loss = extended_ae_model.latent_loss(z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac)
                 scalars['LatLoss/Valid'].append(lat_loss)
                 # lat_loss *= scalars['Sched/beta'].get(epoch)  # Warmup factor: useless for monitoring
-                # monitoring losses - they do not modify input tensors
-                scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(v_in, v_out))
-                scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(v_in, v_out))
                 cont_loss = controls_criterion(v_in, v_out)  # u_in and u_out might be modified by the criterion
                 scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
+                # Monitoring losses
+                scalars['ReconsLoss/MSE/Valid'].append(F.mse_loss(x_out, x_in, reduction='mean'))
+                scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(v_in, v_out))
+                scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(v_in, v_out))
                 # Validation plots
                 if should_plot:
                     v_error = torch.cat([v_error, v_out - v_in])  # Full-batch error storage
@@ -243,7 +247,8 @@ def train_config():
                                                                  max_nb_specs=config.train.logged_samples_count,
                                                                  add_colorbar=True)
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
-        scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Valid'].get() + scalars['LatLoss/Valid'].get())
+        scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Backprop/Valid'].get()
+                                                + scalars['LatLoss/Valid'].get())
         # Dynamic LR scheduling depends on validation performance
         # Summed losses for plateau-detection are chosen in config.py
         scheduler.step(sum([scalars['{}/Valid'.format(loss_name)].get() for loss_name in config.train.scheduler_loss]))
@@ -265,7 +270,7 @@ def train_config():
                                                                full_dataset.preset_indexes_helper)
                 logger.tensorboard.add_figure('SynthControlsError', fig, epoch)
         metrics['epochs'] = epoch + 1
-        metrics['ReconsLoss/Valid_'].append(scalars['ReconsLoss/Valid'].get())
+        metrics['ReconsLoss/MSE/Valid_'].append(scalars['ReconsLoss/MSE/Valid'].get())
         metrics['LatLoss/Valid_'].append(scalars['LatLoss/Valid'].get())
         metrics['LatCorr/Valid_'].append(scalars['LatCorr/Valid'].get())
         metrics['Controls/QLoss/Valid_'].append(scalars['Controls/QLoss/Valid'].get())

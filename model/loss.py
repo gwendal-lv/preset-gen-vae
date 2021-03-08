@@ -10,19 +10,33 @@ from data.preset import PresetIndexesHelper
 
 class L2Loss:
     """
-    L2 (squared difference) loss, with customizable normalization options.
+    L2 (squared difference) loss, with customizable normalization (averaging) options.
 
     When used to model the reconstruction probability p_theta( x | zK ), normalization has strong
     implications on the p_theta( x | zK ) model itself.
     E.g., for a 1-element batch, the non-normalized L2 loss implies a learned mean, fixed 1/√2 std
     gaussian model for each element of x.
-
-    By normalizing the L2 error (i.e. MSE error), the fixed std is multiplied by √(nb of elements of x)
+    When normalizing the L2 error (i.e. MSE error), the fixed std is multiplied by √(nb of elements of x)
     (e.g. approx *300 for a 250x350 pixels spectrogram)
 
     Normalization over batch dimension should always be performed (monte-carlo log-proba estimation).
     """
-    pass  # TODO
+    def __init__(self, contents_average=False, batch_average=True):
+        """
+
+        :param contents_average: If True, the loss value will be divided by the number of elements of a batch item.
+        :param batch_average: If True, the loss value will be divided by batch size
+        """
+        self.contents_average = contents_average
+        self.batch_average = batch_average
+
+    def __call__(self, inferred, target):
+        loss = torch.sum(torch.square(inferred - target))
+        if self.batch_average:
+            loss = loss / inferred.shape[0]
+        if self.contents_average:
+            loss = loss / inferred[0, :].numel()
+        return loss
 
 
 # TODO Spectral Convergence
@@ -30,7 +44,7 @@ class L2Loss:
 
 class GaussianDkl:
     """ Kullback-Leibler Divergence between independant Gaussian distributions (diagonal
-    covariance matrices). mu 2 and logs(var) 2 are optional and will be resp. zeros and ones if not given.
+    covariance matrices). mu 2 and logs(var) 2 are optional and will be resp. zeros and zeros if not given.
 
     A normalization over the batch dimension will automatically be performed.
     An optional normalization over the channels dimension can also be performed.
@@ -61,13 +75,13 @@ class SynthParamsLoss:
     to this class constructor.
 
     The categorical loss is categorical cross-entropy. """
-    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss, categorical_loss_factor=0.2,
+    def __init__(self, idx_helper: PresetIndexesHelper, normalize_losses: bool, categorical_loss_factor=0.2,
                  prevent_useless_params_loss=True):
         """
 
         :param idx_helper: PresetIndexesHelper instance, created by a PresetDatabase, to convert vst<->learnable params
-        :param numerical_loss: Loss class instance to compute loss on numerical-represented learnable parameters.
-            The given loss function should perform a batch mean reduction.
+        :param normalize_losses: If True, losses will be divided by batch size and number of parameters
+            in a batch element. If False, losses will only be divided by batch size.
         :param categorical_loss_factor: Factor to be applied to the categorical cross-entropy loss, which is
             much greater than the 'corresponding' MSE loss (if the parameter was learned as numerical)
         :param prevent_useless_params_loss: If True, the class will search for useless params (e.g. params which
@@ -75,9 +89,14 @@ class SynthParamsLoss:
             TODO describe overhead here
         """
         self.idx_helper = idx_helper
-        self.numerical_loss = numerical_loss
+        self.normalize_losses = normalize_losses
         self.cat_loss_factor = categorical_loss_factor
         self.prevent_useless_params_loss = prevent_useless_params_loss
+        # Numerical loss criterion
+        if self.normalize_losses:
+            self.numerical_criterion = nn.MSELoss(reduction='mean')
+        else:
+            self.numerical_criterion = L2Loss()
         # Pre-compute indexes lists (to use less CPU). 'num' stands for 'numerical' (not number)
         self.num_indexes = self.idx_helper.get_numerical_learnable_indexes()
         self.cat_indexes = self.idx_helper.get_categorical_learnable_indexes()
@@ -101,7 +120,7 @@ class SynthParamsLoss:
                         if num_idx in useless_num_learn_param_indexes[row]:
                             u_in[row, num_idx] = 0.0
                             u_out[row, num_idx] = 0.0
-            num_loss = self.numerical_loss(u_in[:, self.num_indexes], u_out[:, self.num_indexes])
+            num_loss = self.numerical_criterion(u_out[:, self.num_indexes], u_in[:, self.num_indexes])
         cat_loss = 0.0  # - - - categorical loss - - -
         if len(self.cat_indexes) > 0:
             # For each categorical output (separate loss computations...)
@@ -130,7 +149,8 @@ class SynthParamsLoss:
                 q_odds = q_odds[target_one_hot]
                 # normalization vs. batch size
                 cat_loss += - torch.sum(torch.log(q_odds)) / (batch_size - len(rows_to_remove))
-            cat_loss = cat_loss / len(self.cat_indexes)  # Normalization vs. number of categorical-learned params
+            if self.normalize_losses:  # Normalization vs. number of categorical-learned params
+                cat_loss = cat_loss / len(self.cat_indexes)
         # losses weighting - Cross-Entropy is usually be much bigger than MSE. num_loss
         return num_loss + cat_loss * self.cat_loss_factor
 
