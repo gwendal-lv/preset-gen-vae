@@ -11,6 +11,9 @@ import torch
 import torch.utils
 import soundfile as sf
 import json
+from multiprocessing import Process
+import multiprocessing
+from datetime import datetime
 
 class DivaDataset(PresetDataset):
     def __init__(self, note_duration = 3.0, n_fft = 512, fft_hop = 512,
@@ -37,7 +40,7 @@ class DivaDataset(PresetDataset):
         self._param_names = self.diva_db.get_param_names()
         self.valid_preset_UIDs = list(range(self._total_nb_presets))
         self.learnable_params_idx = self.valid_preset_UIDs
-        for idx in [0]:
+        for idx in [0, 13, 17, 39, 50, 143, 174, 175, 261, 262]:
             self.learnable_params_idx.remove(idx)
         #del diva_db
         self._params_cardinality = np.asarray([diva.Diva.get_param_cardinality(idx) for idx in range(self.total_nb_params)])
@@ -125,6 +128,21 @@ class DivaDataset(PresetDataset):
                 print("Writing .wav files... ({}/{})".format(i, len(self)))
         print("Finished writing {} .wav files".format(len(self)))
 
+    def generate_wav_files_multi_process(self, begin, end, process_name):
+        midi_note, midi_velocity = self.midi_note, self.midi_velocity
+        for i in range(begin, end):
+            preset = self.valid_preset_UIDs[i]
+            preset_params = self.get_full_preset_params(self.valid_preset_UIDs[i])
+            x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)
+            sf.write(self.get_wav_file_path(preset, midi_note, midi_velocity), x_wav, Fs, subtype='FLOAT')
+            print("\n")
+            print(process_name)
+            print(i)
+            if (i - begin) % 50 == 0:
+                print(process_name + " : Writing .wav files... ({}/{})".format((i - begin), (end - begin)))
+        print(process_name + " : Finished writing {} .wav files".format((end - begin)))
+        print(datetime.now())
+
     def __getitem__(self, i):
         """ Returns a tuple containing a 2D scaled dB spectrogram tensor (1st dim: freq; 2nd dim: time),
         a 1D tensor of parameter values in [0;1], and a 1d tensor with remaining int info (preset UID, midi note, vel).
@@ -160,6 +178,7 @@ if __name__ == "__main__":
     # TODO regenerate audio and spectrogram stats files
     # ============== DATA RE-GENERATION - FROM config.py ==================
     regenerate_wav = False  # quite long (15min, full dataset, 1 midi note)
+    regenerate_wav_multi_process = True
     regenerate_spectrograms_stats = False  # approx 3 min
 
     # No label restriction, no normalization, etc...
@@ -174,6 +193,17 @@ if __name__ == "__main__":
         print(diva_dataset)  # All files must be pre-rendered before printing
         print(test)
 
+    if regenerate_wav_multi_process:
+        num_processor = multiprocessing.cpu_count()
+        process_list = []
+        print(num_processor)
+        for i in range (0, num_processor):
+            process_list.append(Process(target=diva_dataset.generate_wav_files_multi_process, args=(int(len(diva_dataset)/num_processor * i), int(len(diva_dataset)/num_processor * (i + 1)), "Process n°" + str(i))))
+        for process in process_list:
+            print(process)
+            process.start()
+            process.join()
+
     if regenerate_wav:
         # WRITE ALL WAV FILES (approx. 10.5Go for 4.0s audio, 1 midi note)
         diva_dataset.generate_wav_files()
@@ -181,3 +211,4 @@ if __name__ == "__main__":
         # whole-dataset stats (for proper normalization)
         diva_dataset.compute_and_store_spectrograms_stats()
     # ============== DATA RE-GENERATION - FROM config.py ==================
+    print("OK")
