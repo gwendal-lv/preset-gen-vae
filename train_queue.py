@@ -10,6 +10,7 @@ import importlib  # to reload config.py between each run
 import numpy as np
 
 import train
+import utils.exception
 
 
 # = = = = = = = = = = config.py modifications = = = = = = = = = =
@@ -21,16 +22,18 @@ Please write two lists of dicts, such that:
 - each dict key corresponds to an attribute of config.model.* or config.train.*. Empty dict to indicate
       that no config modification should be performed
 """
+"""
 # Run 0
 model_config_mods.append({})
 train_config_mods.append({})
-# Run 1
-model_config_mods.append({'run_name': '05_vaeflow_slower_warmup'})
-train_config_mods.append({'beta_start_value': 0.0, 'beta_warmup_epochs': 100})
 """
+# Run 1
+model_config_mods.append({'run_name': '15_beta_0.2'})
+train_config_mods.append({'beta_start_value': 0.02, 'beta': 0.2})
 # Run 2
-model_config_mods.append({'run_name': '20_no_useless_loss'})
-train_config_mods.append({})
+model_config_mods.append({'run_name': '16_beta_0.2'})
+train_config_mods.append({'beta_start_value': 0.02, 'beta': 0.2})
+"""
 # Run 3
 model_config_mods.append({'run_name': '21_no_useless_loss'})
 train_config_mods.append({})
@@ -65,13 +68,31 @@ if __name__ == "__main__":
               .format(run_index+1, len(model_config_mods)))
 
         # Direct dirty modification of config.py module attributes
+        # The dynamically modified config.py will be used by train.py
         for k, v in model_config_mods[run_index].items():
             config.model.__dict__[k] = v
         for k, v in train_config_mods[run_index].items():
             config.train.__dict__[k] = v
 
-        # This dynamically modified config.py will be used by train.py
-        train.train_config()
+        # Model train. An occasional model divergence (sometimes happen during first epoch) is tolerated
+        max_divergent_model_runs = 2  # 2 diverging runs are already a lot... a 3rd diverging run stops training
+        divergent_model_runs = 0
+        has_finished_training = False
+        while not has_finished_training:
+            try:  # - - - - - Model train - - - - -
+                train.train_config()
+                has_finished_training = True
+            except utils.exception.ModelConvergenceError as e:
+                divergent_model_runs += 1
+                if divergent_model_runs <= max_divergent_model_runs:
+                    print("[train_queue.py] Model train did not converge: {}. Restarting run... (next trial: {}/{})"
+                          .format(e, divergent_model_runs + 1, max_divergent_model_runs + 1))
+                    config.model.allow_erase_run = True  # We force the run to be erasable
+                else:
+                    e_str = "Model training run {}/{} does not converge ({} run trials failed). " \
+                            "Training queue will now stop, please check this convergence problem."\
+                        .format(run_index+1, len(model_config_mods), divergent_model_runs)
+                    raise utils.exception.ModelConvergenceError(e_str)
 
         print("=============== Enqueued Training Run {}/{} has finished ==============="
               .format(run_index+1, len(model_config_mods)))

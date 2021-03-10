@@ -11,6 +11,7 @@ See train_queue.py for enqueued training runs
 from pathlib import Path
 import contextlib
 
+import numpy as np
 import mkl
 import torch
 import torch.nn as nn
@@ -21,6 +22,7 @@ from torch.autograd import profiler
 import config
 import model.loss
 import model.build
+import model.flows
 import logs.logger
 import logs.metrics
 from logs.metrics import SimpleMetric, EpochMetric, LatentMetric
@@ -29,6 +31,7 @@ import data.build
 import utils.profile
 from utils.hparams import LinearDynamicParam
 import utils.figures
+import utils.exception
 
 
 def train_config():
@@ -40,11 +43,10 @@ def train_config():
 
     # ========== Datasets and DataLoaders ==========
     # Must be constructed first because dataset output sizes will be required to automatically infer models output sizes
+    # ************************ config.model.dim_z will be changed if a flow network is used *************************
     full_dataset, dataset = data.build.get_full_and_split_datasets(config.model, config.train)
     # dataset variable is a dict of 3 sub-datasets ('train', 'validation' and 'test')
     dataloader = data.build.get_split_dataloaders(config.train, full_dataset, dataset)
-    # config.py modifications - number of learnable params depends on the synth and dataset arguments
-    config.model.synth_params_count = full_dataset.learnable_params_count
 
 
     # ========== Logger init (required to load from checkpoint) and Config check ==========
@@ -79,24 +81,36 @@ def train_config():
             print("Using 1/{} GPUs for code profiling".format(torch.cuda.device_count()))
         device = 'cuda:0'
         extended_ae_model = extended_ae_model.to(device)
-        ae_model_parallel = nn.DataParallel(extended_ae_model, device_ids=[0])  # "Parallel" 1-GPU model
-        reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model, device_ids=[0])
+        parallel_device_ids = [0]  # "Parallel" 1-GPU model
     else:
         device = torch.device('cuda')
-        extended_ae_model.to(device)
-        ae_model_parallel = nn.DataParallel(extended_ae_model)  # We use all available GPUs
-        reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model)
+        extended_ae_model = extended_ae_model.to(device)
+        parallel_device_ids = None  # We use all available GPUs
+    ae_model_parallel = nn.DataParallel(extended_ae_model, device_ids=parallel_device_ids)
+    reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model, device_ids=parallel_device_ids)
+    # Inverse parallel wrappers of flows (params flow-based loss) - faster training
+    if not config.model.forward_controls_loss:  # FIXME dirty inv flow usage...
+        inverse_latent_flow_parallel = model.flows.InverseFlow(extended_ae_model.ae_model.flow_transform)
+        inverse_latent_flow_parallel = nn.DataParallel(inverse_latent_flow_parallel, device_ids=parallel_device_ids)
+        inverse_reg_flow_parallel = extended_ae_model.reg_model.inverse_flow_transform
+        inverse_reg_flow_parallel = nn.DataParallel(inverse_reg_flow_parallel, device_ids=parallel_device_ids)
 
 
     # ========== Losses (criterion functions) ==========
     # Training losses (for backprop) and Metrics (monitoring) losses and accuracies
-    # Some losses are defined in the models themselves (eventually: most losses will be computed by model classes)
+    # Some losses are defined in the models themselves
     if config.train.normalize_losses:  # Reconstruction backprop loss
         reconstruction_criterion = nn.MSELoss(reduction='mean')
     else:
         reconstruction_criterion = model.loss.L2Loss()
     # Controls backprop loss
-    controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper, config.train.normalize_losses)
+    if config.model.forward_controls_loss:  # usual straightforward loss - compares inference and target
+        controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper,
+                                                        config.train.normalize_losses)
+    else:  # Inverse-flow-based loss
+        controls_criterion = model.loss.FlowParamsLoss(full_dataset.preset_indexes_helper,
+                                                       inverse_latent_flow_parallel, inverse_reg_flow_parallel)
+
     # Monitoring losses always remain the same
     controls_num_eval_criterion = model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
                                                                           numerical_loss=nn.MSELoss(reduction='mean'))
@@ -185,8 +199,14 @@ def train_config():
                 optimizer.zero_grad()
                 ae_out = ae_model_parallel(x_in)  # Spectral VAE - tuple output
                 z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac, x_out = ae_out
-                v_out = reg_model_parallel(z_K_sampled)  # Synth parameters regression
                 scalars['LatCorr/Train'].append(z_0_mu_logvar, z_0_sampled)  # TODO store also z_K_sampled
+                # Synth parameters regression. Flow-based: we do not care about v_out for backprop, but
+                #     need it for monitoring (so we don't ask for the log abs det jacobian return)
+                if isinstance(controls_criterion, model.loss.FlowParamsLoss):
+                    with torch.no_grad():
+                        v_out = reg_model_parallel(z_K_sampled)
+                else:
+                    v_out = reg_model_parallel(z_K_sampled)
                 with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
                     recons_loss = reconstruction_criterion(x_out, x_in)
                     scalars['ReconsLoss/Backprop/Train'].append(recons_loss)
@@ -194,17 +214,25 @@ def train_config():
                     lat_loss = extended_ae_model.latent_loss(z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac)
                     scalars['LatLoss/Train'].append(lat_loss)
                     lat_loss *= scalars['Sched/beta'].get(epoch)
-                    cont_loss = controls_criterion(v_in, v_out)  # u_in and u_out might be modified by this criterion
-                    scalars['Controls/BackpropLoss/Train'].append(cont_loss)
-                    if extended_ae_model.is_flow_based_latent_space:  # Flow training stabilization loss?
-                        flow_input_loss = 0.1 * flow_input_dkl(z_0_mu_logvar[:, 0, :], z_0_mu_logvar[:, 1, :])
+                    # Monitoring losses
+                    with torch.no_grad():
+                        scalars['ReconsLoss/MSE/Train'].append(recons_loss if config.train.normalize_losses
+                                                               else F.mse_loss(x_out, x_in, reduction='mean'))
+                        scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_out, v_in))
+                        scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_out, v_in))
+                    # Flow training stabilization loss?  TODO maybe remove if latent flow Batch-Norm is used
+                    if extended_ae_model.is_flow_based_latent_space:
+                        flow_input_loss = 0.1 * config.train.beta * flow_input_dkl(z_0_mu_logvar[:, 0, :],
+                                                                                   z_0_mu_logvar[:, 1, :])
                     else:
                         flow_input_loss = 0.0
-                    (recons_loss + lat_loss + cont_loss + flow_input_loss).backward()  # Actual backpropagation is here
-                # Monitoring losses
-                scalars['ReconsLoss/MSE/Train'].append(F.mse_loss(x_out, x_in, reduction='mean'))
-                scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_in, v_out))
-                scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_in, v_out))
+                    if config.model.forward_controls_loss:  # unused params might be modified by this criterion
+                        cont_loss = controls_criterion(v_out, v_in)
+                    else:
+                        cont_loss = controls_criterion(z_0_mu_logvar, v_in)
+                    scalars['Controls/BackpropLoss/Train'].append(cont_loss)
+                    utils.exception.check_nan_values(epoch, recons_loss, lat_loss, flow_input_loss, cont_loss)
+                    (recons_loss + lat_loss + flow_input_loss + cont_loss).backward()  # Actual backpropagation is here
                 with profiler.record_function("OPTIM_STEP") if is_profiled else contextlib.nullcontext():
                     optimizer.step()  # Internal params. update; before scheduler step
                 logger.on_minibatch_finished(i)
@@ -233,12 +261,16 @@ def train_config():
                 lat_loss = extended_ae_model.latent_loss(z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac)
                 scalars['LatLoss/Valid'].append(lat_loss)
                 # lat_loss *= scalars['Sched/beta'].get(epoch)  # Warmup factor: useless for monitoring
-                cont_loss = controls_criterion(v_in, v_out)  # u_in and u_out might be modified by the criterion
-                scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
                 # Monitoring losses
-                scalars['ReconsLoss/MSE/Valid'].append(F.mse_loss(x_out, x_in, reduction='mean'))
-                scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(v_in, v_out))
-                scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(v_in, v_out))
+                scalars['ReconsLoss/MSE/Valid'].append(recons_loss if config.train.normalize_losses
+                                                       else F.mse_loss(x_out, x_in, reduction='mean'))
+                scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(v_out, v_in))
+                scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(v_out, v_in))
+                if isinstance(controls_criterion, model.loss.FlowParamsLoss):
+                    cont_loss = controls_criterion(z_0_mu_logvar, v_in)
+                else:  # v_in and v_out might be modified by this criterion (useless/unused params are set to 0.0)
+                    cont_loss = controls_criterion(v_out, v_in)
+                scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
                 # Validation plots
                 if should_plot:
                     v_error = torch.cat([v_error, v_out - v_in])  # Full-batch error storage

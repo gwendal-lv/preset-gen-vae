@@ -157,6 +157,13 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         return len(self.learnable_params_idx)
 
     @property
+    def learnable_params_tensor_length(self):
+        """ Length of a learnable parameters tensor (contains single-element numerical values and one-hot encoded
+        categorical params). """
+        _, params, _, _ = self.__getitem__(0)
+        return params.shape[0]
+
+    @property
     def vst_param_learnable_model(self):
         """ List of models for full-preset (VSTi-compatible) parameters. Possible values are None for non-learnable
         parameters, 'num' for numerical data (continuous or discrete) and 'cat' for categorical data. """

@@ -6,6 +6,7 @@ from torch.distributions.normal import Normal
 import contextlib
 from torch.autograd import profiler
 
+from nflows.flows.realnvp import SimpleRealNVP
 from nflows.transforms.base import CompositeTransform
 from nflows.transforms.autoregressive import MaskedAffineAutoregressiveTransform
 from nflows.transforms.permutations import ReversePermutation
@@ -71,10 +72,17 @@ class FlowVAE(nn.Module):
     The loss does not rely on a Kullback-Leibler divergence but on a direct log-likelihood computation.
     """
 
-    def __init__(self, encoder, dim_z, decoder, normalize_latent_loss,
-                 flow_layers, flow_hidden_features,
-                 # TODO add more flow params (hidden neural networks config: BN, layers, ...)
-                 ):
+    def __init__(self, encoder, dim_z, decoder, normalize_latent_loss: bool, flow_arch: str):
+        """
+
+        :param encoder:
+        :param dim_z:
+        :param decoder:
+        :param normalize_latent_loss:
+        :param flow_arch: Full string-description of the flow, e.g. 'realnvp_4l200' (flow type, number of flows,
+            hidden features count, ...)
+        # TODO add more flow params (hidden neural networks config: BN, layers, ...)
+        """
         # TODO reserve midi pitch/vel latent variables? add ctor argument
         super().__init__()
         # No size checks performed. Encoder and decoder must have been properly designed
@@ -82,16 +90,36 @@ class FlowVAE(nn.Module):
         self.dim_z = dim_z
         self.decoder = decoder
         self.is_profiled = False
-        # Latent flow setup
         self.normalize_latent_loss = normalize_latent_loss
-        self.flow_layers_count = flow_layers
-        self.flow_hidden_features = flow_hidden_features
-        transforms = []
-        for _ in range(self.flow_layers_count):
-            transforms.append(ReversePermutation(features=self.dim_z))
-            transforms.append(MaskedAffineAutoregressiveTransform(features=self.dim_z,
-                                                                  hidden_features=self.flow_hidden_features))
-        self.flow_transform = CompositeTransform(transforms)
+        # Latent flow setup
+        flow_args = flow_arch.split('_')
+        if len(flow_args) < 2:
+            raise AssertionError("flow_arch argument must contains at least a flow type and layers description, "
+                                 "e.g. 'realnvp_4l200'")
+        elif len(flow_args) > 2:
+            raise NotImplementedError("Optional flow arch argument not supported yet")
+        self.flow_arch = flow_args[0]
+        flow_layers_args = flow_args[1].split('l')
+        self.flow_layers_count = int(flow_layers_args[0])
+        self.flow_hidden_features = int(flow_layers_args[1])
+        if self.flow_arch.lower() == 'maf':
+            transforms = []
+            for _ in range(self.flow_layers_count):
+                transforms.append(ReversePermutation(features=self.dim_z))
+                transforms.append(MaskedAffineAutoregressiveTransform(features=self.dim_z,
+                                                                      hidden_features=self.flow_hidden_features))
+            self.flow_transform = CompositeTransform(transforms)
+        elif self.flow_arch.lower() == 'realnvp':
+            flow = SimpleRealNVP(features=self.dim_z, hidden_features=self.flow_hidden_features,
+                                 num_layers=self.flow_layers_count,
+                                 num_blocks_per_layer=2,  # MAAF layers default count
+                                 batch_norm_within_layers=True,
+                                 batch_norm_between_layers=False  # True would prevent reversibility during train
+                                 )
+            # Dirty quick trick, we want the tranform only, not the base distribution that we want to model ourselves...
+            self.flow_transform = flow._transform
+        else:
+            raise NotImplementedError("Unavailable flow '{}'".format(self.flow_arch))
 
     def forward(self, x):
         """ Encodes the given input into a q_Z0(z_0|x) probability distribution,

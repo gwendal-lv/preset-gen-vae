@@ -51,11 +51,12 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['synth'] = self.model_config.synth
         self.hyper_params['syntargs'] = self.model_config.synth_args_str
         self.hyper_params['catmodel'] = self.model_config.synth_vst_params_learned_as_categorical
+        self.hyper_params['normloss'] = self.train_config.normalize_losses
         # Latent space hparams
         self.hyper_params['z_dim'] = self.model_config.dim_z
         # self.hyper_params['latloss'] = self.train_config.latent_loss
+        self.hyper_params['controls'] = self.model_config.synth_params_count
         # Synth controls regression - not logged anymore (see model_config.synth_vst_params_learned_as_categorical)
-        # self.hyper_params['controls'] = self.model_config.synth_params_count
         # self.hyper_params['contloss'] = self.model_config.controls_losses
         # Auto-Encoder hparams
         self.hyper_params['encarch'] = self.model_config.encoder_architecture

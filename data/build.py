@@ -29,6 +29,10 @@ def random_split(full_dataset, datasets_proportions, random_gen_seed=0):
 
 
 def get_full_and_split_datasets(model_config, train_config):
+    """
+    Returns the full (main) dataset, and split train/validation/test datasets.
+    If a Flow-based synth params regression is to bu used, this function will modify the latent space dimension dim_z
+    """
     if model_config.synth.startswith('dexed'):
         full_dataset = dataset.DexedDataset(** dataset.model_config_to_dataset_kwargs(model_config),
                                             algos=model_config.dataset_synth_args[0],
@@ -40,9 +44,15 @@ def get_full_and_split_datasets(model_config, train_config):
         raise NotImplementedError("No dataset available for '{}': unrecognized synth.".format(model_config.synth))
     if train_config.verbosity >= 2:
         print(full_dataset.preset_indexes_helper)
+    # config.py direct dirty modifications - number of learnable params depends on the synth and dataset arguments
+    model_config.synth_params_count = full_dataset.learnable_params_count
+    model_config.learnable_params_tensor_length = full_dataset.learnable_params_tensor_length
+    if model_config.params_regression_architecture.startswith("flow_"):
+        # ********************************* dim_z changes if a flow network is used *********************************
+        model_config.dim_z = model_config.learnable_params_tensor_length
     # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
     # TODO "test" holdout dataset must *always* be the same - even when performing k-fold cross-validation
-    #   do 2 random splits?
+    #   do 2 random splits? full-->test/other, then other-->train/valid
     sub_datasets = random_split(full_dataset, train_config.datasets_proportions, random_gen_seed=0)
     return full_dataset, sub_datasets
 
