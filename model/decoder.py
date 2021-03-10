@@ -59,11 +59,12 @@ class SpectrogramDecoder(nn.Module):
 class SpectrogramCNN(nn.Module):
     """ A decoder CNN network for spectrogram output """
 
-    def __init__(self, architecture, spectrogram_input_size):
+    def __init__(self, architecture, spectrogram_input_size, output_activation=nn.Hardtanh()):
         """ Defines a decoder given the specified architecture. """
         super().__init__()
         self.architecture = architecture
         self.spectrogram_input_size = spectrogram_input_size
+        self.output_activation = output_activation  # TODO replace by tanh if hardtanh does not improve perfs
 
         if self.architecture == 'wavenet_baseline':  # https://arxiv.org/abs/1704.01279
             ''' Symmetric layer output sizes (compared to the encoder).
@@ -153,7 +154,7 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(n_lay, n_lay, k7, [2, 2], pads[3], out_pads[3], [2, 2],
                                                       activation=nn.ELU(), name_prefix='dec4'),
                                         nn.ConvTranspose2d(n_lay, 1, k7, [2, 2], pads[4]),
-                                        nn.Tanh()
+                                        self.output_activation
                                         )
 
         elif self.architecture == 'speccnn8l1'\
@@ -176,7 +177,7 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(16, 8, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
                                         nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2),
-                                        nn.Tanh()
+                                        self.output_activation
                                         )
 
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 2.4 GMultAdd  (batch 256)
@@ -197,7 +198,7 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(64, 32, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec7'),
                                         nn.ConvTranspose2d(32, 1, [5, 5], [2, 2], 2),
-                                        nn.Tanh()
+                                        self.output_activation
                                         )
         elif self.architecture == 'speccnn8l1_3':  # XXX GB (RAM) ; XXX GMultAdd  (batch 256)
             ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
@@ -219,7 +220,7 @@ class SpectrogramCNN(nn.Module):
                                         layer.TConv2D(16, 8, ker, [2, 2], 2, output_padding=[0, 1],
                                                       activation=act(act_p), name_prefix='dec7'),
                                         nn.ConvTranspose2d(8, 1, [5, 5], [2, 2], 2),
-                                        nn.Tanh()
+                                        self.output_activation
                                         )
 
         else:

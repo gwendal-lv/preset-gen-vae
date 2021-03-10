@@ -17,8 +17,9 @@ from data.abstractbasedataset import PresetDataset
 from data.preset import PresetIndexesHelper
 
 
-# Width of a parameter for scatter/box/error plots
+# Display parameters for scatter/box/error plots
 __param_width = 0.12
+__x_tick_font_size = 8
 
 
 def plot_spectrograms(specs_GT, specs_recons=None, presets_UIDs=None, print_info=False,
@@ -89,7 +90,7 @@ def plot_latent_distributions_stats(latent_metric: logs.metrics.LatentMetric,
         figsize = (__param_width * z_mu.shape[1], 3)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     sns.boxplot(data=z_mu, ax=ax, fliersize=0.3, linewidth=0.5)
-    ax.set(xlabel='z', ylabel='$q_{\phi}(z|x) : \mu$')
+    ax.set(xlabel='z', ylabel='$q_{\phi}(z_0|x) : \mu$')
     for tick in ax.get_xticklabels():
         tick.set_rotation(90)
         tick.set_fontsize(8)
@@ -118,6 +119,12 @@ def plot_spearman_correlation(latent_metric: logs.metrics.LatentMetric):
             tick.set_rotation(90)
     fig.tight_layout()
     return fig, axes
+
+
+def _configure_params_plot_x_tick_labels(ax):
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(90)
+        tick.set_fontsize(__x_tick_font_size)
 
 
 def plot_synth_preset_param(ref_preset, inferred_preset=None,
@@ -169,13 +176,29 @@ def plot_synth_preset_param(ref_preset, inferred_preset=None,
     ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, len(ref_preset)-0.5])
     ax.get_legend().remove()
     if preset_UID is not None:
-        ax.set_title("Preset UID={}".format(preset_UID))
-    plt.vlines(x=np.arange(len(ref_preset) + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+        ax.set_title("Preset UID={} (VSTi numerical parameters)".format(preset_UID))
     # vertical "faders" separator lines
-    for tick in ax.get_xticklabels():
-        tick.set_rotation(90)
+    plt.vlines(x=np.arange(len(ref_preset) + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+    _configure_params_plot_x_tick_labels(ax)
     fig.tight_layout()
     return fig, ax
+
+
+def _get_learnable_preset_xticklabels(idx_helper: PresetIndexesHelper):
+    vst_param_names = idx_helper.vst_param_names
+    x_tick_labels = list()
+    # Param names - vst-param by vst-param. We do not actually care about the learnable index
+    for vst_idx, learnable_indexes in enumerate(idx_helper.full_to_learnable):
+        if learnable_indexes is not None:  # learnable only
+            if isinstance(learnable_indexes, Iterable):  # cat learnable representation
+                for i, _ in enumerate(learnable_indexes):
+                    if i == 0:
+                        x_tick_labels.append('{}.{}.{}'.format(vst_idx, i, vst_param_names[vst_idx]))
+                    else:
+                        x_tick_labels.append('{}.{}'.format(vst_idx, i))
+            else:  # numerical learnable representation
+                x_tick_labels.append('{}.{}'.format(vst_idx, vst_param_names[vst_idx]))
+    return x_tick_labels
 
 
 def plot_synth_learnable_preset(learnable_preset, idx_helper: PresetIndexesHelper, preset_UID=None, figsize=None):
@@ -198,84 +221,75 @@ def plot_synth_learnable_preset(learnable_preset, idx_helper: PresetIndexesHelpe
     # Scatter plot for "faders" values
     sns.scatterplot(data=df, x='param_idx', y='ref_preset', ax=ax)
     ax.set_xticks(range(n_params))
-    # Param names - vst-param by vst-param
-    vst_param_names = idx_helper.vst_param_names
-    x_tick_labels = list()
-    # We do not actually care about the learnable index
-    for vst_idx, learnable_indexes in enumerate(idx_helper.full_to_learnable):
-        if learnable_indexes is not None:  # learnable only
-            if isinstance(learnable_indexes, Iterable):  # cat learnable representation
-                for i, _ in enumerate(learnable_indexes):
-                    if i == 0:
-                        x_tick_labels.append('{}.{}.{}'.format(vst_idx, i, vst_param_names[vst_idx]))
-                    else:
-                        x_tick_labels.append('{}.{}'.format(vst_idx, i))
-            else:  # numerical learnable representation
-                x_tick_labels.append('{}.{}'.format(vst_idx, vst_param_names[vst_idx]))
-    ax.set_xticklabels(x_tick_labels)
+    ax.set_xticklabels(_get_learnable_preset_xticklabels(idx_helper))
     ax.set(xlabel='', ylabel='Param. value', xlim=[0-0.5, n_params-0.5])
     if preset_UID is not None:
-        ax.set_title("Preset UID={}".format(preset_UID))
-    plt.vlines(x=np.arange(n_params + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+        ax.set_title("Preset UID={} (learnable parameters)".format(preset_UID))
     # vertical "faders" separator lines
-    for tick in ax.get_xticklabels():
-        tick.set_rotation(90)
+    plt.vlines(x=np.arange(n_params + 1) - 0.5, ymin=0.0, ymax=1.0, colors='k', linewidth=1.0)
+    _configure_params_plot_x_tick_labels(ax)
     fig.tight_layout()
     return fig, ax
 
 
-def plot_synth_preset_error(param_batch_errors, dataset=None, figsize=None):
+def plot_synth_preset_error(param_batch_errors, idx_helper: PresetIndexesHelper,
+                            mae_y_limit=0.59, boxplots_y_limits=(-1.1, 1.1),
+                            figsize=None):
     """ Uses boxplots to show the error between inferred (out) and GT (in) preset parameters.
 
-    :param param_batch_errors: 2D Tensor of learnable synth parameters error
-    :param dataset: (optional) PresetDataset class, to improve the display (param names, cardinality, ...) """
-    assert False  # FIXME does not work with categorical learnable parameters -
+    :param mae_y_limit: Constant y-axis upper display limit (to help visualize improvements during training).
+        Won't be used is a computed MAE is actually greater than this value.
+    :param boxplots_y_limits: Constant y-axis box plots display limits.
+    :param param_batch_errors: 2D Tensor of learnable synth parameters error (numerical and categorical)
+    :param idx_helper: to improve the display (param names, cardinality, ...) """
     # init
-    n_params = param_batch_errors.size()[1]
-    if dataset is not None:
-        param_indexes = dataset.learnable_params_idx
-        param_names = [dataset.preset_param_names[idx] for idx in dataset.learnable_params_idx]
+    n_params = param_batch_errors.size(1)
+    assert n_params == idx_helper.learnable_preset_size
+    batch_errors_np = param_batch_errors.numpy()
     if figsize is None:
         figsize = (__param_width * n_params, 5)
     # Search for synth groups of parameters
     param_groups_separations = []
-    if dataset is not None:
-        if dataset.synth_name.lower() == "dexed":
-            groups_starts = [23 + 22*i for i in range(6)]  # 23. OP1 EG RATE 1 (1st operator MIDI param)
-            cur_group = 0
-            for i, idx in enumerate(param_indexes):
-                # We add a new group when a threshold is reached
-                if idx >= groups_starts[cur_group]:
-                    param_groups_separations.append(i - 0.5)
-                    cur_group += 1
-        else:
-            raise ValueError("Unknown synth '{}' from given dataset".format(dataset.synth_name.lower()))
-    # Data Plot
+    if idx_helper.synth_name.lower() == "dexed":
+        groups_start_vst_indexes = [23 + 22*i for i in range(6)]  # 23. OP1 EG RATE 1 (1st operator MIDI param)
+        cur_group = 0
+        for learn_idx in range(n_params):
+            # We add a new group when a threshold is reached
+            if idx_helper.learnable_to_full[learn_idx] >= groups_start_vst_indexes[cur_group]:
+                param_groups_separations.append(learn_idx - 0.5)
+                cur_group += 1
+    else:
+        print("[utils/figures.py] Unknown synth '{}' from given PresetIndexesHelper. "
+              "No groups separations displayed on error plot.".format(idx_helper.synth_name))
     fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
-    mse = np.square(param_batch_errors.numpy()).mean(axis=0)
-    axes[0].plot(mse)
+    mae = np.abs(batch_errors_np).mean(axis=0)
+    for learn_idx in range(batch_errors_np.shape[1]):
+        learnable_model = idx_helper.vst_param_learnable_model[idx_helper.learnable_to_full[learn_idx]]
+        if learnable_model == 'num':
+            color = '#1F77B4'  # mpl C0 - blue
+        elif learnable_model == 'cat':
+            color = '#9467BD'  # mpl C4 - purple
+        # Top axis: Mean Absolute Error
+        axes[0].scatter(learn_idx, mae[learn_idx], color=color)
+        # Bottom axis: box-plots
+        axes[1].boxplot(x=batch_errors_np[:, learn_idx], positions=[learn_idx],
+                        widths=0.8, flierprops={'marker': '.', 'markersize': 0.5},
+                        boxprops={'color': color})
     axes[0].grid()
-    axes[0].set(ylabel='MSE')
-    sns.boxplot(data=param_batch_errors.numpy(),
-                ax=axes[1], fliersize=0.3, linewidth=0.5, palette='blend:#09B,#45B')  # #27B matplotlib blue
+    axes[0].set(ylabel='MAE')
+    y_max = max(mae.max()*1.02, mae_y_limit)  # dynamic limit
+    axes[0].set_ylim([0.0, y_max])
+    axes[0].set_title("Synth parameters inference error (blue/purple: numerical/categorical)")
     axes[1].grid(axis='y')
     axes[1].set(ylabel='Inference error')
-    if dataset is not None:
-        xticks = ['{}.'.format(idx) for idx in param_indexes]
-    else:
-        xticks = ['' for _ in range(n_params)]
-    if dataset is not None:
-        xticks = [(xticks[i] + name) for i, name in enumerate(param_names)]
-    axes[1].set_xticklabels(xticks)
-    for tick in axes[1].get_xticklabels():
-        tick.set_rotation(90)
-        tick.set_fontsize(8)
+    axes[1].set_ylim(boxplots_y_limits)
+    axes[1].set_xticklabels(_get_learnable_preset_xticklabels(idx_helper))
+    _configure_params_plot_x_tick_labels(axes[1])
     # Param groups separations lines
     if len(param_groups_separations) > 0:
         for row in range(len(axes)):
             axes[row].vlines(param_groups_separations, 0.0, 1.0,
                              transform=axes[row].get_xaxis_transform(), colors='C9', linewidth=1.0)
-    axes[0].set_ylim([0.0, mse.max()*1.1])
     fig.tight_layout()
     return fig, axes
 

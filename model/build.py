@@ -3,7 +3,7 @@ Utility functions for building a new model (using only config from config.py),
 or for building a previously trained model.
 """
 
-from model import VAE, encoder, decoder, extendedAE
+from model import VAE, encoder, decoder, extendedAE, regression
 
 
 def build_ae_model(model_config, train_config):
@@ -20,18 +20,27 @@ def build_ae_model(model_config, train_config):
                                                model_config.spectrogram_size, train_config.fc_dropout)
     decoder_model = decoder.SpectrogramDecoder(model_config.encoder_architecture, model_config.dim_z,
                                                model_config.spectrogram_size, train_config.fc_dropout)
-    ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model)  # Not parallelized yet
+    # AE model, not parallelized (if required, this should be done afterwards)
+    if model_config.latent_flows_count == 0:
+        ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
+                                train_config.latent_loss)
+    else:
+        ae_model = VAE.FlowVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
+                               model_config.latent_flows_count, model_config.latent_flows_hidden_features)
     return encoder_model, decoder_model, ae_model
 
 
 def build_extended_ae_model(model_config, train_config, idx_helper):
+    # Spectral VAE
     encoder_model, decoder_model, ae_model = build_ae_model(model_config, train_config)
-    if model_config.params_regression == 'mlp':
-        extended_ae_model = extendedAE.MLPExtendedAE(ae_model, model_config.params_regression_architecture,
-                                                     model_config.dim_z, idx_helper,
-                                                     train_config.fc_dropout)
+    # Regression model
+    if model_config.params_regression_architecture.startswith("mlp_"):
+        reg_arch = model_config.params_regression_architecture.replace("mlp_", "")
+        reg_model = regression.MLPRegression(reg_arch, model_config.dim_z, idx_helper, train_config.fc_dropout)
     else:
-        raise NotImplementedError()
+        raise NotImplementedError("Synth param regression arch '{}' not implemented"
+                                  .format(model_config.params_regression_architecture))
+    extended_ae_model = extendedAE.ExtendedAE(ae_model, reg_model, idx_helper, train_config.fc_dropout)
     return encoder_model, decoder_model, ae_model, extended_ae_model
 
 

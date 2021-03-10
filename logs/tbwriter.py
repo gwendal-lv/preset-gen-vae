@@ -50,6 +50,7 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['fcdrop'] = self.train_config.fc_dropout
         self.hyper_params['synth'] = self.model_config.synth
         self.hyper_params['syntargs'] = self.model_config.synth_args_str
+        self.hyper_params['catmodel'] = self.model_config.synth_vst_params_learned_as_categorical
         # Latent space hparams
         self.hyper_params['z_dim'] = self.model_config.dim_z
         self.hyper_params['latloss'] = self.train_config.latent_loss
@@ -82,13 +83,13 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         :return: None
         """
         metrics_dict = dict()
-        for k, v in metrics.items():
+        for k, metric in metrics.items():
             if isinstance(metrics[k], BufferedMetric):
                 try:
-                    metrics_dict[k] = v.mean()
+                    metrics_dict[k] = metric.mean
                 except ValueError:
                     metrics_dict[k] = 0  # TODO appropriate default metric value?
             else:
-                metrics_dict[k] = v
+                metrics_dict[k] = metric
         self.add_hparams(self.hyper_params, metrics_dict, hparam_domain_discrete=None)
 

@@ -5,6 +5,7 @@ Classes to store and transform batches of synth presets. Some functionalities ar
 - transform some linear parameter into categorical, and reverse this transformation
 """
 
+from enum import Enum
 from typing import Optional
 from collections.abc import Iterable
 import numpy as np
@@ -12,6 +13,11 @@ import numpy as np
 import torch
 import torch.nn.functional
 
+
+# Should be used instead of the str synth name to reduce loss functions computation times
+class _Synth(Enum):
+    GENERIC = 0  # Undefined synth - numerical params only, all are learnable
+    DEXED = 1
 
 
 class PresetIndexesHelper:
@@ -41,9 +47,14 @@ class PresetIndexesHelper:
             self._numerical_vst_params = [i for i in range(self.full_preset_size)]
             self._categorical_vst_params = []
             self._learnable_preset_size = nb_params
+            self.synth_name = "generic_synth"
+            self._synth = _Synth.GENERIC
         # Actual construction based on a dataset
         else:
             assert nb_params is None
+            self.synth_name = dataset.synth_name
+            if self.synth_name.lower() == "dexed":
+                self._synth = _Synth.DEXED
             self._param_names = dataset.preset_param_names
             self._vst_param_learnable_model = dataset.vst_param_learnable_model
             self._param_cardinals = [dataset.get_preset_param_cardinality(vst_idx, learnable_representation=True)
@@ -215,6 +226,44 @@ class PresetIndexesHelper:
         else:
             raise ValueError("Unknown learnable model '{}' for idx={} (corresponding VST param idx={})"
                              .format(learn_model, idx, vst_idx))
+
+    def get_useless_learned_params_indexes(self, preset_GT: torch.Tensor):
+        """ Returns a tuple of lists of learnable indexes of useless parameters, i.e. learnable parameters which do
+            not influence the output sound, and should not be used in a loss function and for backprop.
+            For categorical learnable params, only the first cat-output index is returned.
+
+            First tuple element is the list of useless numerical learned parameters.
+            Second tuple element is the list of useless categorical learned parameters (first cat indexes only).
+
+            E.g. when a Dexed Operator has a 0.0 output level, its parameters have no influence on sound and
+            might have random values.
+
+            :param preset_GT: 1D Tensor of learnable params of a given GT preset from the dataset. """
+        if self._synth == _Synth.DEXED:
+            # operators volumes check.
+            useless_num_learn_param_indexes = []
+            useless_cat_learn_param_indexes = []
+            # OP switch excluded, output level excluded
+            op_params_base_vst_indexes = [23, 24, 25, 26, 27, 28, 29, 30,
+                                          32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43]
+            for op_i, vst_volume_idx in enumerate([31 + 22*i for i in range(6)]):
+                if isinstance(self.full_to_learnable[vst_volume_idx], int):  # numerical
+                    if preset_GT[self.full_to_learnable[vst_volume_idx]].item() < 1e-3:  # OP zero-volume?
+                        # add all operator-related indexes
+                        cur_op_params_vst_indexes = [idx + op_i*22 for idx in op_params_base_vst_indexes]
+                        for vst_idx in cur_op_params_vst_indexes:
+                            learn_idx = self.full_to_learnable[vst_idx]
+                            if isinstance(learn_idx, int):  # num
+                                useless_num_learn_param_indexes.append(learn_idx)
+                            elif isinstance(learn_idx, list):  # cat: only first cat probability output is appended
+                                useless_cat_learn_param_indexes.append(learn_idx[0])
+                elif self.full_to_learnable[vst_volume_idx] is None:
+                    pass
+                else:  # TODO If volume is categorical, we must convert....
+                    raise NotImplementedError("Dexed Operator output volume learned as categorical")
+            return useless_num_learn_param_indexes, useless_cat_learn_param_indexes
+        else:
+            return [], []
 
 
 class PresetsParams:

@@ -22,18 +22,18 @@ Please write two lists of dicts, such that:
       that no config modification should be performed
 """
 # Run 0
-model_config_mods.append({'run_name': '05_largercnn'})
+model_config_mods.append({})
 train_config_mods.append({})
 # Run 1
-model_config_mods.append({'run_name': '06_largercnn'})
-train_config_mods.append({})
+model_config_mods.append({'run_name': '05_vaeflow_slower_warmup'})
+train_config_mods.append({'beta_start_value': 0.0, 'beta_warmup_epochs': 100})
 """
 # Run 2
-model_config_mods.append({'run_name': '06-1_adambeta0.8'})
-train_config_mods.append({'adam_betas': (0.8, 0.999)})
+model_config_mods.append({'run_name': '20_no_useless_loss'})
+train_config_mods.append({})
 # Run 3
-model_config_mods.append({'run_name': '06-2_adambeta0.8'})
-train_config_mods.append({'adam_betas': (0.8, 0.999)})
+model_config_mods.append({'run_name': '21_no_useless_loss'})
+train_config_mods.append({})
 # Run 4
 model_config_mods.append({'run_name': '03_less_bn', 'encoder_architecture': 'speccnn8l1_bn'})
 train_config_mods.append({})

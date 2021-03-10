@@ -31,6 +31,7 @@ class DexedDataset(abstractbasedataset.PresetDataset):
                  vst_params_learned_as_categorical: Optional[str] = None,
                  restrict_to_labels=None, constant_filter_and_tune_params=True,
                  prevent_SH_LFO=False,  # TODO re-implement
+                 learn_mod_wheel_params=True,
                  check_constrains_consistency=True
                  ):
         """
@@ -55,7 +56,8 @@ class DexedDataset(abstractbasedataset.PresetDataset):
             audio files
         """
         super().__init__(note_duration, n_fft, fft_hop, midi_note, midi_velocity, n_mel_bins, mel_fmin, mel_fmax,
-                         normalize_audio, spectrogram_min_dB, spectrogram_normalization)
+                         normalize_audio, spectrogram_min_dB, spectrogram_normalization, learn_mod_wheel_params)
+        assert learn_mod_wheel_params  # Must be learned, because LFO modulation also depends on these params
         self.prevent_SH_LFO = prevent_SH_LFO
         assert prevent_SH_LFO is False  # TODO re-implement S&H enable/disable
         self.constant_filter_and_tune_params = constant_filter_and_tune_params
@@ -81,6 +83,12 @@ class DexedDataset(abstractbasedataset.PresetDataset):
         # Oscillators can be enabled or disabled, but OP SWITCHES are never learnable parameters
         for col in [44, 66, 88, 110, 132, 154]:
             self.learnable_params_idx.remove(col)
+        # Mod-wheel related params?
+        if not self.learn_mod_wheel_params:
+            for vst_param_idx in dexed.Dexed.get_mod_wheel_related_param_indexes():
+                # Some might have been removed already (deactivated operators)
+                if vst_param_idx in self.learnable_params_idx:
+                    self.learnable_params_idx.remove(vst_param_idx)
         # - - - Valid presets - UIDs of presets, and not their database row index - - -
         # Select valid presets by algorithm
         if len(self.algos) == 0:  # All presets are valid
@@ -119,12 +127,16 @@ class DexedDataset(abstractbasedataset.PresetDataset):
             self._params_default_values[2] = 1.0
             self._params_default_values[3] = 0.5
             self._params_default_values[13] = 0.5
+        if not self.learn_mod_wheel_params:
+            mod_vst_params_indexes = dexed.Dexed.get_mod_wheel_related_param_indexes()
+            self._params_cardinality[mod_vst_params_indexes] = np.ones((len(mod_vst_params_indexes),), dtype=np.int)
+            for vst_param_idx in mod_vst_params_indexes:
+                self._params_default_values[vst_param_idx] = 0.0  # Default: no modulation when MIDI mod wheel changes
         # - - - None / Numerical / Categorical learnable status array - - -
         self._vst_param_learnable_model = list()
         num_vst_learned_as_cat_cardinal_threshold = None
         if vst_params_learned_as_categorical is not None:
             if vst_params_learned_as_categorical.startswith('all<='):
-                # TODO CHECK THAT
                 num_vst_learned_as_cat_cardinal_threshold = int(vst_params_learned_as_categorical.replace('all<=', ''))
             else:
                 assert vst_params_learned_as_categorical == 'vst_cat'
@@ -139,8 +151,9 @@ class DexedDataset(abstractbasedataset.PresetDataset):
                     if vst_idx in dexed.Dexed.get_numerical_params_indexes():
                         if num_vst_learned_as_cat_cardinal_threshold is None:  # If no threshold: learned as numerical
                             self._vst_param_learnable_model.append('num')
-                        elif self._params_cardinality[vst_idx] <= num_vst_learned_as_cat_cardinal_threshold:
-                            self._vst_param_learnable_model.append('cat')  # If threshold: might be learned as categorical
+                        # If a non-continuous param has a small enough cardinality: might be learned as categorical
+                        elif 1 < self._params_cardinality[vst_idx] <= num_vst_learned_as_cat_cardinal_threshold:
+                            self._vst_param_learnable_model.append('cat')
                         else:
                             self._vst_param_learnable_model.append('num')
                     # If categorical VST param: must be learned as cat (at this point)
