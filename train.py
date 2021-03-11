@@ -88,12 +88,6 @@ def train_config():
         parallel_device_ids = None  # We use all available GPUs
     ae_model_parallel = nn.DataParallel(extended_ae_model, device_ids=parallel_device_ids)
     reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model, device_ids=parallel_device_ids)
-    # Inverse parallel wrappers of flows (params flow-based loss) - faster training
-    if not config.model.forward_controls_loss:  # FIXME dirty inv flow usage...
-        inverse_latent_flow_parallel = model.flows.InverseFlow(extended_ae_model.ae_model.flow_transform)
-        inverse_latent_flow_parallel = nn.DataParallel(inverse_latent_flow_parallel, device_ids=parallel_device_ids)
-        inverse_reg_flow_parallel = extended_ae_model.reg_model.inverse_flow_transform
-        inverse_reg_flow_parallel = nn.DataParallel(inverse_reg_flow_parallel, device_ids=parallel_device_ids)
 
 
     # ========== Losses (criterion functions) ==========
@@ -109,7 +103,8 @@ def train_config():
                                                         config.train.normalize_losses)
     else:  # Inverse-flow-based loss
         controls_criterion = model.loss.FlowParamsLoss(full_dataset.preset_indexes_helper,
-                                                       inverse_latent_flow_parallel, inverse_reg_flow_parallel)
+                                                       extended_ae_model.ae_model.flow_inverse_function,
+                                                       extended_ae_model.reg_model.flow_inverse_function)
 
     # Monitoring losses always remain the same
     controls_num_eval_criterion = model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
@@ -161,7 +156,8 @@ def train_config():
         raise NotImplementedError()
     if config.train.scheduler_name == 'ReduceLROnPlateau':
         scheduler = torch.optim.lr_scheduler.\
-            ReduceLROnPlateau(optimizer, factor=config.train.scheduler_lr_factor, patience=config.train.scheduler_patience,
+            ReduceLROnPlateau(optimizer, factor=config.train.scheduler_lr_factor,
+                              patience=config.train.scheduler_patience, cooldown=config.train.scheduler_cooldown,
                               threshold=config.train.scheduler_threshold, verbose=(config.train.verbosity >= 2))
     else:
         raise NotImplementedError()
@@ -204,7 +200,9 @@ def train_config():
                 #     need it for monitoring (so we don't ask for the log abs det jacobian return)
                 if isinstance(controls_criterion, model.loss.FlowParamsLoss):
                     with torch.no_grad():
+                        reg_model_parallel.eval()  # FIXME sub-optimal, for monitoring only...
                         v_out = reg_model_parallel(z_K_sampled)
+                        reg_model_parallel.train()
                 else:
                     v_out = reg_model_parallel(z_K_sampled)
                 with profiler.record_function("BACKPROP") if is_profiled else contextlib.nullcontext():
@@ -220,7 +218,8 @@ def train_config():
                                                                else F.mse_loss(x_out, x_in, reduction='mean'))
                         scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_out, v_in))
                         scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_out, v_in))
-                    # Flow training stabilization loss?  TODO maybe remove if latent flow Batch-Norm is used
+                    # Flow training stabilization loss?
+                    #    TODO remove if latent flow Batch-Norm is used (or if BN on last encoder layer)
                     if extended_ae_model.is_flow_based_latent_space:
                         flow_input_loss = 0.1 * config.train.beta * flow_input_dkl(z_0_mu_logvar[:, 0, :],
                                                                                    z_0_mu_logvar[:, 1, :])
@@ -266,10 +265,10 @@ def train_config():
                                                        else F.mse_loss(x_out, x_in, reduction='mean'))
                 scalars['Controls/QLoss/Valid'].append(controls_num_eval_criterion(v_out, v_in))
                 scalars['Controls/Accuracy/Valid'].append(controls_accuracy_criterion(v_out, v_in))
-                if isinstance(controls_criterion, model.loss.FlowParamsLoss):
-                    cont_loss = controls_criterion(z_0_mu_logvar, v_in)
-                else:  # v_in and v_out might be modified by this criterion (useless/unused params are set to 0.0)
+                if config.model.forward_controls_loss:  # unused params might be modified by this criterion
                     cont_loss = controls_criterion(v_out, v_in)
+                else:
+                    cont_loss = controls_criterion(z_0_mu_logvar, v_in)
                 scalars['Controls/BackpropLoss/Valid'].append(cont_loss)
                 # Validation plots
                 if should_plot:
@@ -319,6 +318,7 @@ def train_config():
 
 
     # ========== Logger final stats ==========
+    # TODO pickle all final hparams and metrics?
     logger.on_training_finished()
 
 

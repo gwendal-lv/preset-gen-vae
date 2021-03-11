@@ -36,6 +36,8 @@ class SpectrogramEncoder(nn.Module):
         cnn_out_items = self.cnn_out_size[1] * self.cnn_out_size[2] * self.cnn_out_size[3]
         if 'wavenet_baseline' in self.architecture\
                 or 'speccnn8l1' in self.architecture:  # (not an MLP...) much is done in the CNN
+            # TODO batch-norm here to compensate for unregularized z0 of a flow-based latent space
+            #    add corresponding ctor argument (build with bn=True if using flow-based latent space)
             self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 2 * self.dim_z), nn.Dropout(self.fc_dropout))
         elif self.architecture == 'flow_synth':
             self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 1024), nn.ReLU(),  # TODO dropouts

@@ -22,18 +22,16 @@ Please write two lists of dicts, such that:
 - each dict key corresponds to an attribute of config.model.* or config.train.*. Empty dict to indicate
       that no config modification should be performed
 """
-"""
 # Run 0
 model_config_mods.append({})
 train_config_mods.append({})
-"""
 # Run 1
-model_config_mods.append({'run_name': '15_beta_0.2'})
-train_config_mods.append({'beta_start_value': 0.02, 'beta': 0.2})
+model_config_mods.append({'run_name': "41_flow_reg_bigger"})
+train_config_mods.append({})
+"""
 # Run 2
 model_config_mods.append({'run_name': '16_beta_0.2'})
 train_config_mods.append({'beta_start_value': 0.02, 'beta': 0.2})
-"""
 # Run 3
 model_config_mods.append({'run_name': '21_no_useless_loss'})
 train_config_mods.append({})

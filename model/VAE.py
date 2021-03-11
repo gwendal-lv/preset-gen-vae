@@ -121,6 +121,14 @@ class FlowVAE(nn.Module):
         else:
             raise NotImplementedError("Unavailable flow '{}'".format(self.flow_arch))
 
+    @property
+    def flow_forward_function(self):
+        return self.flow_transform.forward
+
+    @property
+    def flow_inverse_function(self):
+        return self.flow_transform.inverse
+
     def forward(self, x):
         """ Encodes the given input into a q_Z0(z_0|x) probability distribution,
         samples a latent vector from that distribution,

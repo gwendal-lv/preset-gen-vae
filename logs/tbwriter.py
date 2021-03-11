@@ -58,6 +58,8 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['controls'] = self.model_config.synth_params_count
         # Synth controls regression - not logged anymore (see model_config.synth_vst_params_learned_as_categorical)
         # self.hyper_params['contloss'] = self.model_config.controls_losses
+        self.hyper_params['regarch'] = self.model_config.params_regression_architecture
+        self.hyper_params['latfarch'] = self.model_config.latent_flow_arch
         # Auto-Encoder hparams
         self.hyper_params['encarch'] = self.model_config.encoder_architecture
         # self.hyper_params['recloss'] = self.train_config.ae_reconstruction_loss

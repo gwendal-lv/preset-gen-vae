@@ -266,21 +266,22 @@ class FlowParamsLoss:
     some v_in target parameters in the q_Z0(z0) distribution (z0 = invT(invU(v)).
     These invert flows (ideally parallelized) must be provided in the loss constructor
     """
-    def __init__(self, idx_helper: PresetIndexesHelper, latent_inverse_flow, reg_inverse_flow):
+    def __init__(self, idx_helper: PresetIndexesHelper, latent_flow_inverse_function, reg_flow_inverse_function):
         self.idx_helper = idx_helper
-        self.latent_inverse_flow = latent_inverse_flow
-        self.reg_inverse_flow = reg_inverse_flow
+        self.latent_flow_inverse_function = latent_flow_inverse_function
+        self.reg_flow_inverse_function = reg_flow_inverse_function
 
     def __call__(self, z_0_mu_logvar, v_target):
         """ Estimate the probability of v_target in the q_Z0(z0) distribution (see details in TODO REF) """
+
         # FIXME v_target should be "inverse-softmaxed" (because actual output will be softmaxed)
 
         # TODO apply a factor on categorical params (maybe divide by the size of the one-hot encoded vector?)
         #    how to do that with this inverse flow transform??????
 
         # Flows reversing - sum of log abs det of inverse Jacobian is used in the loss
-        z_K, log_abs_det_jac_inverse_U = self.reg_inverse_flow(v_target)
-        z_0, log_abs_det_jac_inverse_T = self.latent_inverse_flow(z_K)
+        z_K, log_abs_det_jac_inverse_U = self.reg_flow_inverse_function(v_target)
+        z_0, log_abs_det_jac_inverse_T = self.latent_flow_inverse_function(z_K)
         # Evaluate q_Z0(z0) (closed-form gaussian probability)
         z_0_log_prob = utils.probability.gaussian_log_probability(z_0, z_0_mu_logvar[:, 0, :], z_0_mu_logvar[:, 1, :])
         # Result is batch-size normalized

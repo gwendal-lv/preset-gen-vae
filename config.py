@@ -17,13 +17,13 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 model = _Config()
 model.name = "ExtVAE2"
-model.run_name = '30_flowreg_proba_loss'  # run: different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
+model.run_name = '41_flow_reg_bigger'  # run: different hyperparams, optimizer, etc... for a given model
+model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
 # Possible values: 'flow_realnvp_4l180', 'mlp_3l1024', ... (configurable numbers of layers and neurons)
 # Optional suffixes: _bn, _nobn, ... TODO implement opts
-model.params_regression_architecture = 'flow_realnvp_4l180'
+model.params_regression_architecture = 'flow_realnvp_8l200'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
@@ -99,7 +99,8 @@ train.scheduler_name = 'ReduceLROnPlateau'  # TODO try CosineAnnealing
 # Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss', ... All required losses will be summed
 train.scheduler_loss = ('ReconsLoss/Backprop', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
-train.scheduler_patience = 20  # Longer patience with smaller datasets and quite unstable trains TODO increase to 30
+train.scheduler_patience = 15  # Longer patience with smaller datasets and quite unstable trains
+train.scheduler_cooldown = 15
 train.scheduler_threshold = 1e-4
 # Training considered "dead" when dynamic LR reaches this value
 train.early_stop_lr_threshold = train.initial_learning_rate * 1e-3

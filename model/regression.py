@@ -149,33 +149,29 @@ class FlowRegression(nn.Module):
             #   - needs ** huge ** amounts of GPU RAM
             self._forward_flow_transform = CompositeTransform(transforms)  # Fast forward  # TODO rename
 
-        # FIXME temp test
-        self._inverse_flow_transform = InverseFlow(self._forward_flow_transform)
-
         self.activation_layer = PresetActivation(self.idx_helper)
 
     @property
-    def fast_forward_flow(self):
+    def is_flow_fast_forward(self):  # TODO improve, real nvp is fast forward and inverse...
         return self._fast_forward_flow
 
     @property
-    def flow_transform(self):
+    def flow_forward_function(self):
         if self._fast_forward_flow:
-            return self._forward_flow_transform
+            return self._forward_flow_transform.forward
         else:
-            raise NotImplementedError("")
+            return self._forward_flow_transform.inverse
 
-    """
     @property
-    def inverse_flow_transform(self):
-        if self._fast_forward_flow:
-            return self._inverse_flow_transform
+    def flow_inverse_function(self):
+        if not self._fast_forward_flow:
+            return self._forward_flow_transform.forward
         else:
-            return self._forward_flow_transform
-    """
+            return self._forward_flow_transform.inverse
 
     def forward(self, z_K):
-        v_out, _ = self.flow_transform(z_K)  # The actual transform can be forward or inverse, depending on ctor args
+        # The actual transform can be forward or inverse, depending on ctor args
+        v_out, _ = self.flow_forward_function(z_K)
         return self.activation_layer(v_out)
 
 

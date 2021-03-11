@@ -27,6 +27,7 @@ class InverseFlow(nn.Module):
     """
     def __init__(self, flow: CompositeTransform):
         super().__init__()
+        raise AssertionError("This class messes autograd graphs (or only pytorch summaries???) and will be removed")
         assert isinstance(flow, CompositeTransform)
         self.flow = flow
 
