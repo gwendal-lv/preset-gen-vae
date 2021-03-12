@@ -9,29 +9,14 @@ import torch.utils.data
 from torch.utils.data import DataLoader
 
 from . import dataset
+import data.sampler
 
 
-def random_split(full_dataset, datasets_proportions, random_gen_seed=0):
-    """ Wrapper for torch.utils.data.random_split which takes 3 float proportions instead
-     of integer lengths as input.
-
-     Returns a dict of 3 sub-datasets with keys 'train', 'validation' and 'test'. """
-    # TODO arg to choose the current k-fold
-    # TODO test set must *always* remain the same, for a given full_dataset
-    #    (use a random split first (always the same seed) then a deterministic split for k-fold?)
-    assert len(datasets_proportions) == 3
-    sub_dataset_lengths = [int(np.floor(r * len(full_dataset))) for r in datasets_proportions]
-    sub_dataset_lengths[2] = len(full_dataset) - sub_dataset_lengths[0] - sub_dataset_lengths[1]
-    # Indexes are randomly split, but the gen seed must always be the same
-    sub_datasets = torch.utils.data.random_split(full_dataset, sub_dataset_lengths,
-                                                 generator=torch.Generator().manual_seed(random_gen_seed))
-    return {'train': sub_datasets[0], 'validation': sub_datasets[1], 'test': sub_datasets[2]}
-
-
-def get_full_and_split_datasets(model_config, train_config):
+def get_dataset(model_config, train_config):
     """
-    Returns the full (main) dataset, and split train/validation/test datasets.
-    If a Flow-based synth params regression is to bu used, this function will modify the latent space dimension dim_z
+    Returns the full (main) dataset.
+    If a Flow-based synth params regression is to be used, this function will modify the latent space
+    dimension dim_z on the config.py module directly (its model attribute is given as an arg of this function).
     """
     if model_config.synth.startswith('dexed'):
         full_dataset = dataset.DexedDataset(** dataset.model_config_to_dataset_kwargs(model_config),
@@ -50,15 +35,13 @@ def get_full_and_split_datasets(model_config, train_config):
     if model_config.params_regression_architecture.startswith("flow_"):
         # ********************************* dim_z changes if a flow network is used *********************************
         model_config.dim_z = model_config.learnable_params_tensor_length
-    # dataset and dataloader are dicts with 'train', 'validation' and 'test' keys
-    # TODO "test" holdout dataset must *always* be the same - even when performing k-fold cross-validation
-    #   do 2 random splits? full-->test/other, then other-->train/valid
-    sub_datasets = random_split(full_dataset, train_config.datasets_proportions, random_gen_seed=0)
-    return full_dataset, sub_datasets
+    return full_dataset
 
 
-def get_split_dataloaders(train_config, full_dataset, sub_datasets, persistent_workers=True):
-    sub_dataloaders = dict()
+def get_split_dataloaders(train_config, full_dataset, persistent_workers=True):
+    """ Returns a dict of train/validation/test DataLoader instances, and a dict which contains the
+    length of each sub-dataset. """
+    # Num workers might be zero (no multiprocessing)
     _debugger = False
     if train_config.profiler_args['enabled'] and train_config.profiler_args['use_cuda']:
         num_workers = 0  # CUDA PyTorch profiler does not work with a multiprocess-dataloader
@@ -69,14 +52,20 @@ def get_split_dataloaders(train_config, full_dataset, sub_datasets, persistent_w
     else:  # We should use an higher CPU count for real-time audio rendering
         # 4*GPU count: optimal w/ light dataloader (e.g. (mel-)spectrogram computation)
         num_workers = min(train_config.minibatch_size, torch.cuda.device_count() * 4)
-    for dataset_type in sub_datasets:
-        # Persistent workers crash with pin_memory - but are more efficient than pinned memory
-        sub_dataloaders[dataset_type] = DataLoader(sub_datasets[dataset_type], train_config.minibatch_size,
-                                                   shuffle=True, num_workers=num_workers, pin_memory=False,
-                                                   persistent_workers=((num_workers > 0) and persistent_workers))
+    # Dataloader easily build from samplers
+    subset_samplers = data.sampler.build_subset_samplers(full_dataset, k_fold=train_config.current_k_fold,
+                                                         k_folds_count=train_config.k_folds,
+                                                         test_holdout_proportion=train_config.test_holdout_proportion)
+    dataloaders = dict()
+    sub_datasets_lengths = dict()
+    for k, sampler in subset_samplers.items():
+        dataloaders[k] = torch.utils.data.DataLoader(full_dataset, batch_size=train_config.minibatch_size,
+                                                     sampler=sampler, num_workers=num_workers, pin_memory=False,
+                                                     persistent_workers=((num_workers > 0) and persistent_workers))
+        sub_datasets_lengths[k] = len(sampler.indices)
         if train_config.verbosity >= 1:
             print("[data/build.py] Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}"
-                  .format(dataset_type, len(sub_datasets[dataset_type]), len(full_dataset),
-                          100.0 * len(sub_datasets[dataset_type])/len(full_dataset), num_workers))
-    return sub_dataloaders
+                  .format(k, sub_datasets_lengths[k], len(full_dataset),
+                          100.0 * sub_datasets_lengths[k]/len(full_dataset), num_workers))
+    return dataloaders, sub_datasets_lengths
 

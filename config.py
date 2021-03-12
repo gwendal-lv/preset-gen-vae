@@ -17,18 +17,21 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 model = _Config()
 model.name = "ExtVAE2"
-model.run_name = '41_flow_reg_bigger'  # run: different hyperparams, optimizer, etc... for a given model
+# TODO auto append k-fold to run name?
+model.run_name = '50_dev_test'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = False  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
 # Possible values: 'flow_realnvp_4l180', 'mlp_3l1024', ... (configurable numbers of layers and neurons)
 # Optional suffixes: _bn, _nobn, ... TODO implement opts
-model.params_regression_architecture = 'flow_realnvp_8l200'
+model.params_regression_architecture = 'flow_realnvp_4l200'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
 model.mel_bins = 257  # -1 disables Mel-scale spectrogram. Try: 257, 513, ...
 model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO implement
+# Tuple of (pitch, velocity) tuples. Using only 1 midi note is fine
+model.midi_notes = ((60, 100),)
 model.spectrogram_min_dB = -120.0
 # Possible spectrogram sizes:
 #   (513, 433): audio 5.0s, fft size 1024, fft hop 256
@@ -63,9 +66,9 @@ model.logs_root_dir = "saved"  # Path from this directory
 train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
 train.minibatch_size = 256
-train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.k_folds = 5  # TODO implement
-train.current_k_fold = 1  # TODO implement
+train.test_holdout_proportion = 0.2
+train.k_folds = 5
+train.current_k_fold = 1
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 train.n_epochs = 1000  # Total number of epochs (including previous training epochs)
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
@@ -77,7 +80,7 @@ train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VA
 train.normalize_losses = True  # Normalize all losses over the vector-dimension (e.g. spectrogram pixels count, D, ...)
 
 
-# TODO train regression network alone when full-train has finished
+# TODO train regression network alone when full-train has finished?
 #    that requires two optimizers and two schedulers (one full-model, one for regression)
 train.optimizer = 'Adam'
 # Maximal learning rate (reached after warmup, then reduced on plateaus)

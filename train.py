@@ -42,11 +42,12 @@ def train_config():
 
 
     # ========== Datasets and DataLoaders ==========
-    # Must be constructed first because dataset output sizes will be required to automatically infer models output sizes
-    # ************************ config.model.dim_z will be changed if a flow network is used *************************
-    full_dataset, dataset = data.build.get_full_and_split_datasets(config.model, config.train)
-    # dataset variable is a dict of 3 sub-datasets ('train', 'validation' and 'test')
-    dataloader = data.build.get_split_dataloaders(config.train, full_dataset, dataset)
+    # Must be constructed first because dataset output sizes will be required to automatically
+    # infer models output sizes.
+    # ********************* config.model.dim_z will be changed if a flow network is used **********************
+    dataset = data.build.get_dataset(config.model, config.train)
+    # dataloader is a dict of 3 subsets dataloaders ('train', 'validation' and 'test')
+    dataloader, sub_datasets_lengths = data.build.get_split_dataloaders(config.train, dataset)
 
 
     # ========== Logger init (required to load from checkpoint) and Config check ==========
@@ -63,7 +64,7 @@ def train_config():
 
     # ========== Model definition (requires the full_dataset to be built) ==========
     _, _, _, extended_ae_model = model.build.build_extended_ae_model(config.model, config.train,
-                                                                     full_dataset.preset_indexes_helper)
+                                                                     dataset.preset_indexes_helper)
     if start_checkpoint is not None:
         extended_ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
     extended_ae_model.eval()
@@ -99,17 +100,17 @@ def train_config():
         reconstruction_criterion = model.loss.L2Loss()
     # Controls backprop loss
     if config.model.forward_controls_loss:  # usual straightforward loss - compares inference and target
-        controls_criterion = model.loss.SynthParamsLoss(full_dataset.preset_indexes_helper,
+        controls_criterion = model.loss.SynthParamsLoss(dataset.preset_indexes_helper,
                                                         config.train.normalize_losses)
     else:  # Inverse-flow-based loss
-        controls_criterion = model.loss.FlowParamsLoss(full_dataset.preset_indexes_helper,
+        controls_criterion = model.loss.FlowParamsLoss(dataset.preset_indexes_helper,
                                                        extended_ae_model.ae_model.flow_inverse_function,
                                                        extended_ae_model.reg_model.flow_inverse_function)
 
     # Monitoring losses always remain the same
-    controls_num_eval_criterion = model.loss.QuantizedNumericalParamsLoss(full_dataset.preset_indexes_helper,
+    controls_num_eval_criterion = model.loss.QuantizedNumericalParamsLoss(dataset.preset_indexes_helper,
                                                                           numerical_loss=nn.MSELoss(reduction='mean'))
-    controls_accuracy_criterion = model.loss.CategoricalParamsAccuracy(full_dataset.preset_indexes_helper,
+    controls_accuracy_criterion = model.loss.CategoricalParamsAccuracy(dataset.preset_indexes_helper,
                                                                        reduce=True, percentage_output=True)
     # Stabilizing loss for flow-based latent space
     flow_input_dkl = model.loss.GaussianDkl(normalize=config.train.normalize_losses)
@@ -127,8 +128,8 @@ def train_config():
                # Latent-space and VAE losses
                'LatLoss/Train': EpochMetric(), 'LatLoss/Valid': EpochMetric(),
                'VAELoss/Train': SimpleMetric(), 'VAELoss/Valid': SimpleMetric(),
-               'LatCorr/Train': LatentMetric(config.model.dim_z, len(dataset['train'])),
-               'LatCorr/Valid': LatentMetric(config.model.dim_z, len(dataset['validation'])),
+               'LatCorr/Train': LatentMetric(config.model.dim_z, sub_datasets_lengths['train']),
+               'LatCorr/Valid': LatentMetric(config.model.dim_z, sub_datasets_lengths['validation']),
                # Other misc. metrics
                'Sched/LR': SimpleMetric(config.train.initial_learning_rate),
                'Sched/LRwarmup': LinearDynamicParam(config.train.lr_warmup_start_factor, 1.0,
@@ -298,7 +299,7 @@ def train_config():
             logger.tensorboard.add_figure('LatentEntanglement', fig, epoch)
             if v_error.size(0) > 0:  # u_error might be empty on early_stop
                 fig, _ = utils.figures.plot_synth_preset_error(v_error.detach().cpu(),
-                                                               full_dataset.preset_indexes_helper)
+                                                               dataset.preset_indexes_helper)
                 logger.tensorboard.add_figure('SynthControlsError', fig, epoch)
         metrics['epochs'] = epoch + 1
         metrics['ReconsLoss/MSE/Valid_'].append(scalars['ReconsLoss/MSE/Valid'].get())
