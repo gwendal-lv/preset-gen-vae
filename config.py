@@ -30,8 +30,10 @@ model.note_duration = (3.0, 1.0)
 model.stft_args = (1024, 256)  # fft size and hop size
 model.mel_bins = 257  # -1 disables Mel-scale spectrogram. Try: 257, 513, ...
 model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO implement
-# Tuple of (pitch, velocity) tuples. Using only 1 midi note is fine
-model.midi_notes = ((60, 100),)
+# Tuple of (pitch, velocity) tuples. Using only 1 midi note is fine.
+# model.midi_notes = ((60, 85), )  # Reference note
+model.midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
+model.stack_spectrograms = False
 model.spectrogram_min_dB = -120.0
 # Possible spectrogram sizes:
 #   (513, 433): audio 5.0s, fft size 1024, fft hop 256

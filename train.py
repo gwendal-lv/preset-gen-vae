@@ -275,9 +275,8 @@ def train_config():
                 if should_plot:
                     v_error = torch.cat([v_error, v_out - v_in])  # Full-batch error storage
                     if i == 0:  # tensorboard samples for minibatch 'eval' [0] only
-                        fig, _ = utils.figures.plot_spectrograms(x_in, x_out, sample_info[:, 0], plot_error=True,
-                                                                 max_nb_specs=config.train.logged_samples_count,
-                                                                 add_colorbar=True)
+                        fig, _ = utils.figures.plot_train_spectrograms(x_in, x_out, sample_info, dataset,
+                                                                       config.model, config.train)
                     logger.tensorboard.add_figure('Spectrogram', fig, epoch, close=True)
         scalars['VAELoss/Valid'] = SimpleMetric(scalars['ReconsLoss/Backprop/Valid'].get()
                                                 + scalars['LatLoss/Valid'].get())

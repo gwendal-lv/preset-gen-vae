@@ -20,4 +20,5 @@ def model_config_to_dataset_kwargs(model_config):
     :param model_config: should be the config.model attribute from config.py. """
     return {'note_duration': model_config.note_duration, 'n_fft': model_config.stft_args[0],
             'fft_hop': model_config.stft_args[1], 'n_mel_bins': model_config.mel_bins,
-            'spectrogram_min_dB': model_config.spectrogram_min_dB}
+            'spectrogram_min_dB': model_config.spectrogram_min_dB,
+            'midi_notes': model_config.midi_notes, 'multi_note_spectrogram': model_config.stack_spectrograms}

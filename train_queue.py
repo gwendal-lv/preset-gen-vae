@@ -13,7 +13,8 @@ import train
 import utils.exception
 
 
-# = = = = = = = = = = config.py modifications = = = = = = = = = =
+
+
 model_config_mods, train_config_mods = list(), list()
 """
 Please write two lists of dicts, such that:
@@ -22,39 +23,27 @@ Please write two lists of dicts, such that:
 - each dict key corresponds to an attribute of config.model.* or config.train.*. Empty dict to indicate
       that no config modification should be performed
 """
+
+# automatically train all cross-validation folds?
+train_all_k_folds = False
+
 # Run 0
 model_config_mods.append({})
 train_config_mods.append({})
 # Run 1
 model_config_mods.append({'run_name': "41_flow_reg_bigger"})
 train_config_mods.append({})
-"""
-# Run 2
-model_config_mods.append({'run_name': '16_beta_0.2'})
-train_config_mods.append({'beta_start_value': 0.02, 'beta': 0.2})
-# Run 3
-model_config_mods.append({'run_name': '21_no_useless_loss'})
-train_config_mods.append({})
-# Run 4
-model_config_mods.append({'run_name': '03_less_bn', 'encoder_architecture': 'speccnn8l1_bn'})
-train_config_mods.append({})
-# Run 5
-model_config_mods.append({'run_name': '03-2_less_bn', 'encoder_architecture': 'speccnn8l1_bn'})
-train_config_mods.append({})
-# Run 6
-model_config_mods.append({'run_name': '04_fc_drop_0.3'})
-train_config_mods.append({'fc_dropout': 0.3})
-# Run 7
-model_config_mods.append({'run_name': '04-2_fc_drop_0.3'})
-train_config_mods.append({'fc_dropout': 0.3})
-"""
 
-# = = = = = = = = = = end of config.py modifications = = = = = = = = = =
+
 
 
 if __name__ == "__main__":
 
     assert len(model_config_mods) == len(train_config_mods)
+
+    # TODO if performing k-fold cross validation trains, duplicate run mods to train all folds
+    if train_all_k_folds:
+        raise NotImplementedError()
 
     for run_index in range(len(model_config_mods)):
         # Force config reload
@@ -72,7 +61,8 @@ if __name__ == "__main__":
         for k, v in train_config_mods[run_index].items():
             config.train.__dict__[k] = v
 
-        # Model train. An occasional model divergence (sometimes happen during first epoch) is tolerated
+        # Model train. An occasional model divergence (sometimes happen during first epochs) is tolerated
+        #    Full-AR Normalizing Flows (e.g. MAF/IAF) are very unstable and hard to train on dim>100 latent spaces
         max_divergent_model_runs = 2  # 2 diverging runs are already a lot... a 3rd diverging run stops training
         divergent_model_runs = 0
         has_finished_training = False

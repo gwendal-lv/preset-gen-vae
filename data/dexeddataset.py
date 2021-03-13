@@ -7,7 +7,7 @@ See end of file.
 import os
 import pathlib
 import json
-from typing import Optional
+from typing import Optional, Iterable
 import multiprocessing
 from datetime import datetime
 
@@ -240,11 +240,11 @@ class DexedDataset(abstractbasedataset.PresetDataset):
         """ Returns a tuple of string description of labels. """
         return dexed.PresetDatabase.get_available_labels()
 
-    def _render_audio(self, preset_params, midi_note, midi_velocity):
+    def _render_audio(self, preset_params: Iterable, midi_note, midi_velocity):
         """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate.
 
-        :param preset_params: Constrained preset parameters (constraints from this class ctor args must have
-            been applied before passing preset_params).
+        :param preset_params: List of preset VST parameters, constrained (constraints from this class ctor
+            args must have been applied before passing preset_params).
         """
         # reload the VST to prevent hanging notes/sounds
         dexed_renderer = dexed.Dexed(midi_note_duration_s=self.note_duration[0],
@@ -336,22 +336,26 @@ class DexedDataset(abstractbasedataset.PresetDataset):
 
 
 if __name__ == "__main__":
-
-    # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = True  # multi-notes: a few minutes on a powerful CPU (20+ cores) - else: much longer
-    regenerate_spectrograms_stats = True  # approx 3 min
-
     import sys
     sys.path.append(pathlib.Path(__file__).parent.parent)
     import config  # Dirty path trick to import config.py from project root dir
 
-    #operators = config.model.dataset_synth_args[1]  # Custom operators limitation?
-    operators = None
+    # ============== DATA RE-GENERATION - FROM config.py ==================
+    regenerate_wav = False  # multi-notes: a few minutes on a powerful CPU (20+ cores) - else: much longer
+    # WARNING: when computing stats, please make sure that *all* midi notes are available
+    regenerate_spectrograms_stats = True  # approx 3 min - 30e3 preset, single MIDI note (16mins for 16 MIDI notes)
+    if regenerate_spectrograms_stats:
+        assert len(config.model.midi_notes) > 1  # all MIDI notes (6?) must be used to compute stats
+
+
+    operators = config.model.dataset_synth_args[1]  # Custom operators limitation?
+    # operators = None
 
     # No label restriction, no normalization, etc...
     # But: OPERATORS LIMITATIONS and DEFAULT PARAM CONSTRAINTS (main params (filter, transpose,...) are constant)
     dexed_dataset = DexedDataset(note_duration=config.model.note_duration,
                                  midi_notes=config.model.midi_notes,
+                                 multi_note_spectrogram=config.model.stack_spectrograms,
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
                                  n_mel_bins=config.model.mel_bins,
                                  spectrogram_normalization=None,  # No normalization: we want to compute stats

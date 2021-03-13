@@ -54,7 +54,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         self.n_fft = n_fft
         self.fft_hop = fft_hop
         self.midi_notes = midi_notes
-        self.multi_note_spectrogram = multi_note_spectrogram
+        self._multi_note_spectrogram = multi_note_spectrogram
         self.n_mel_bins = n_mel_bins
         self.mel_fmin = mel_fmin
         self.mel_fmax = mel_fmax
@@ -84,13 +84,13 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                "{} Spectrogram items, size={}, min={:.1f}dB, normalization:{}" \
             .format(self.valid_presets_count, self.total_nb_presets, self.synth_name,
                     len(self), self.midi_notes_per_preset,
-                    ('stacked' if self.midi_notes_per_preset > 1 and self.multi_note_spectrogram else 'independent'),
+                    ('stacked' if self.midi_notes_per_preset > 1 and self._multi_note_spectrogram else 'independent'),
                     len(self.learnable_params_idx), self.total_nb_params - len(self.learnable_params_idx),
                     ("Linear" if self.n_mel_bins <= 0 else "Mel"), self.get_spectrogram_tensor_size(),
                     self.spectrogram.min_dB, self.spectrogram_normalization)
 
     def __len__(self):  # Required for any torch.utils.data.Dataset
-        if self.multi_note_spectrogram:
+        if self._multi_note_spectrogram:
             return self.valid_presets_count
         else:
             return self.valid_presets_count * self.midi_notes_per_preset
@@ -108,7 +108,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         #  - wait for the file to be generated on disk (or for the command to notify... something)
         #  - read and delete this .wav file
         # If several notes available but single-spectrogram output: we have to convert i into a UID and a note index
-        if self.midi_notes_per_preset > 1 and not self.multi_note_spectrogram:
+        if self.midi_notes_per_preset > 1 and not self._multi_note_spectrogram:
             preset_index = i // self.midi_notes_per_preset
             midi_note_indexes = [i % self.midi_notes_per_preset]
         else:
@@ -132,7 +132,10 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         # Tuple output. Warning: torch.from_numpy does not copy values (torch.tensor(...) ctor does)
         # FIXME the MIDI pitch and velocity should be a separate tensor, for multi-layer spectrogram
         #   but this will break compatibility with much code and many notebooks
-        ref_midi_pitch, ref_midi_velocity = self.midi_notes[0]
+        if len(midi_note_indexes) == 1:
+            ref_midi_pitch, ref_midi_velocity = self.midi_notes[midi_note_indexes[0]]
+        else:
+            ref_midi_pitch, ref_midi_velocity = self.midi_notes[0]
         return torch.stack(spectrograms), \
             torch.squeeze(preset_params.get_learnable(), 0), \
             torch.tensor([preset_UID, ref_midi_pitch, ref_midi_velocity], dtype=torch.int32), \
@@ -154,6 +157,13 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     def midi_notes_per_preset(self):
         """ Number of available midi notes (different pitch and/or velocity) for a given preset. """
         return len(self.midi_notes)
+
+    @property
+    def multi_note_spectrogram(self):
+        """ If True, this dataset's spectrograms are multi-channel, each channel corresponding to a MIDI note.
+         If False, this dataset's spectrograms are single-channel, but different dataset items can correspond to
+         different MIDI notes. """
+        return self._multi_note_spectrogram
 
     @abstractmethod
     def get_full_preset_params(self, preset_UID) -> PresetsParams:
@@ -299,7 +309,6 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
 
     def denormalize_spectrogram(self, spectrogram):
         if self.spectrogram_normalization == 'min_max':  # result in [-1, 1]
-            # TODO check this for audio reconstruction
             return (spectrogram + 1.0) * ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)\
                    + self.spec_stats['min']
         elif self.spectrogram_normalization == 'mean_std':
