@@ -31,7 +31,7 @@ train_all_k_folds = False
 model_config_mods.append({})
 train_config_mods.append({})
 # Run 1
-model_config_mods.append({'run_name': "41_flow_reg_bigger"})
+model_config_mods.append({'run_name': "84_data_15k"})
 train_config_mods.append({})
 
 

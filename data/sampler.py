@@ -43,7 +43,7 @@ def build_subset_samplers(dataset: PresetDataset,
     preset_indexes['validation'] = preset_indexes_folds[k_fold]
     preset_indexes['train'] = np.hstack([preset_indexes_folds[i] for i in range(k_folds_count) if i != k_fold])
     # Final indexes
-    if dataset.midi_notes_per_preset == 1 or dataset.multi_note_spectrogram:
+    if dataset.midi_notes_per_preset == 1 or dataset.multichannel_stacked_spectrograms:
         final_indexes = preset_indexes
     else:  # multi-note, single-layer spectrogram dataset: dataset indexes are not preset indexes
         final_indexes = dict()
@@ -71,7 +71,7 @@ if __name__ == "__main__":
                                  midi_notes=((60, 100), (70, 100)),  # config.model.midi_notes,
                                  n_fft=config.model.stft_args[0], fft_hop=config.model.stft_args[1],
                                  algos=[21],  # very few samples
-                                 multi_note_spectrogram=False,  # Set False to test the annoying case
+                                 multichannel_stacked_spectrograms=False,  # Set False to test the annoying case
                                  n_mel_bins=config.model.mel_bins,
                                  # Params learned as categorical: maybe comment
                                  vst_params_learned_as_categorical=config.model.synth_vst_params_learned_as_categorical,

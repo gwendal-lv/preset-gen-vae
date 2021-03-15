@@ -363,7 +363,7 @@ class Dexed:
         to the encoding network. """
         # (6. 'OSC KEY SYNC' (LFO) does NOT depend on the midi note (it syncs or not LFO phase on midi event).)
         # All the KEY L/R stuff (with breakpoint at some MIDI note) effects are really dependant on the MIDI key.
-        # 36. breakpoint.
+        # 36. breakpoint. Values 0 to 99 correspond to MIDI notes 9 to 108 (A-1 to C8)
         # 37/38: L/R scale (curve) depth.
         # 39/40: L/R scale (=curve) type: +/-lin or +/-exp.
         return [(36 + 22*i) for i in range(6)]\

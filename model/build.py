@@ -1,9 +1,22 @@
 """
 Utility functions for building a new model (using only config from config.py),
-or for building a previously trained model.
+or for building a previously trained model before loading state dicts.
+
+Decomposed into numerous small function for easier module-by-module debugging.
 """
 
 from model import VAE, encoder, decoder, extendedAE, regression
+
+
+def build_encoder_and_decoder_models(model_config, train_config):
+    # Encoder and decoder with the same architecture
+    enc_z_length = (model_config.dim_z - 2 if model_config.concat_midi_to_z else model_config.dim_z)
+    encoder_model = encoder.SpectrogramEncoder(model_config.encoder_architecture, enc_z_length,
+                                               model_config.input_tensor_size, train_config.fc_dropout,
+                                               output_bn=(train_config.latent_flow_input_regularization.lower() == 'bn'))
+    decoder_model = decoder.SpectrogramDecoder(model_config.encoder_architecture, model_config.dim_z,
+                                               model_config.input_tensor_size, train_config.fc_dropout)
+    return encoder_model, decoder_model
 
 
 def build_ae_model(model_config, train_config):
@@ -15,19 +28,15 @@ def build_ae_model(model_config, train_config):
     :param train_config: train attributes (a few are required, e.g. dropout probability)
     :return: Tuple: encoder, decoder, full AE model
     """
-    # Encoder and decoder with the same architecture
-    encoder_model = encoder.SpectrogramEncoder(model_config.encoder_architecture, model_config.dim_z,
-                                               model_config.spectrogram_size, train_config.fc_dropout)
-    decoder_model = decoder.SpectrogramDecoder(model_config.encoder_architecture, model_config.dim_z,
-                                               model_config.spectrogram_size, train_config.fc_dropout)
-    # AE model, not parallelized (if required, this should be done afterwards)
+    encoder_model, decoder_model = build_encoder_and_decoder_models(model_config, train_config)
+    # AE model
     if model_config.latent_flow_arch is None:
         ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
                                 train_config.latent_loss)
     else:
         # TODO flow dropout (in all but the last flow layers)
         ae_model = VAE.FlowVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
-                               model_config.latent_flow_arch)
+                               model_config.latent_flow_arch, concat_midi_to_z0=model_config.concat_midi_to_z)
     return encoder_model, decoder_model, ae_model
 
 
@@ -36,17 +45,17 @@ def build_extended_ae_model(model_config, train_config, idx_helper):
     latent vectors as input. Both models are integrated into an ExtendedAE model. """
     # Spectral VAE
     encoder_model, decoder_model, ae_model = build_ae_model(model_config, train_config)
-    # Regression model
+    # Regression model - extension of the VAE model
     if model_config.params_regression_architecture.startswith("mlp_"):
         assert model_config.forward_controls_loss is True  # Non-invertible MLP cannot inverse target values
         reg_arch = model_config.params_regression_architecture.replace("mlp_", "")
-        reg_model = regression.MLPRegression(reg_arch, model_config.dim_z, idx_helper, train_config.fc_dropout)
+        reg_model = regression.MLPRegression(reg_arch, model_config.dim_z, idx_helper, train_config.reg_fc_dropout)
     elif model_config.params_regression_architecture.startswith("flow_"):
         assert model_config.learnable_params_tensor_length > 0  # Flow models require dim_z to be equal to this length
         reg_arch = model_config.params_regression_architecture.replace("flow_", "")
         reg_model = regression.FlowRegression(reg_arch, model_config.dim_z, idx_helper,
                                               fast_forward_flow=model_config.forward_controls_loss,
-                                              dropout_p=train_config.fc_dropout)
+                                              dropout_p=train_config.reg_fc_dropout)
     else:
         raise NotImplementedError("Synth param regression arch '{}' not implemented"
                                   .format(model_config.params_regression_architecture))

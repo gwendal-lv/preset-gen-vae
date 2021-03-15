@@ -24,7 +24,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     def __init__(self, note_duration,
                  n_fft, fft_hop,  # ftt 1024 hop=512: spectrogram is approx. the size of 5.0s@22.05kHz audio
                  midi_notes=((60, 100),),
-                 multi_note_spectrogram=False,
+                 multichannel_stacked_spectrograms=False,
                  n_mel_bins=-1, mel_fmin=30.0, mel_fmax=11e3,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization='min_max',
                  learn_mod_wheel_params=False
@@ -37,9 +37,9 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         :param fft_hop: STFT hop length (in samples)
         :param midi_notes: Tuple of (midi_pitch, midi_velocity) tuples of notes that should be rendered. Length
             of this tuple is the number of spectrograms that will be fed to the encoder.
-        :param multi_note_spectrogram: If True, this dataset will multi-layer spectrograms
+        :param multichannel_stacked_spectrograms: If True, this dataset will multi-layer spectrograms
             (1 layer = 1 midi pitch and velocity). If False, the dataset length will be multiplied by the number
-            of midi notes. TODO Warning: if False, the dataset must be properly splitted
+            of midi notes.
         :param n_mel_bins: Number of frequency bins for the Mel-spectrogram. If -1, the normal STFT will be used
         :param mel_fmin: TODO implement
         :param mel_fmax: TODO implement
@@ -54,7 +54,9 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         self.n_fft = n_fft
         self.fft_hop = fft_hop
         self.midi_notes = midi_notes
-        self._multi_note_spectrogram = multi_note_spectrogram
+        if len(self.midi_notes) == 1:  # A 1-note dataset cannot handle multi-note stacked spectrograms
+            assert not multichannel_stacked_spectrograms  # Check ctor arguments
+        self._multichannel_stacked_spectrograms = multichannel_stacked_spectrograms
         self.n_mel_bins = n_mel_bins
         self.mel_fmin = mel_fmin
         self.mel_fmax = mel_fmax
@@ -84,13 +86,13 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                "{} Spectrogram items, size={}, min={:.1f}dB, normalization:{}" \
             .format(self.valid_presets_count, self.total_nb_presets, self.synth_name,
                     len(self), self.midi_notes_per_preset,
-                    ('stacked' if self.midi_notes_per_preset > 1 and self._multi_note_spectrogram else 'independent'),
+                    ('stacked' if self.midi_notes_per_preset > 1 and self._multichannel_stacked_spectrograms else 'independent'),
                     len(self.learnable_params_idx), self.total_nb_params - len(self.learnable_params_idx),
                     ("Linear" if self.n_mel_bins <= 0 else "Mel"), self.get_spectrogram_tensor_size(),
                     self.spectrogram.min_dB, self.spectrogram_normalization)
 
     def __len__(self):  # Required for any torch.utils.data.Dataset
-        if self._multi_note_spectrogram:
+        if self._multichannel_stacked_spectrograms:
             return self.valid_presets_count
         else:
             return self.valid_presets_count * self.midi_notes_per_preset
@@ -108,7 +110,7 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         #  - wait for the file to be generated on disk (or for the command to notify... something)
         #  - read and delete this .wav file
         # If several notes available but single-spectrogram output: we have to convert i into a UID and a note index
-        if self.midi_notes_per_preset > 1 and not self._multi_note_spectrogram:
+        if self.midi_notes_per_preset > 1 and not self._multichannel_stacked_spectrograms:
             preset_index = i // self.midi_notes_per_preset
             midi_note_indexes = [i % self.midi_notes_per_preset]
         else:
@@ -159,11 +161,11 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         return len(self.midi_notes)
 
     @property
-    def multi_note_spectrogram(self):
+    def multichannel_stacked_spectrograms(self):
         """ If True, this dataset's spectrograms are multi-channel, each channel corresponding to a MIDI note.
          If False, this dataset's spectrograms are single-channel, but different dataset items can correspond to
          different MIDI notes. """
-        return self._multi_note_spectrogram
+        return self._multichannel_stacked_spectrograms
 
     @abstractmethod
     def get_full_preset_params(self, preset_UID) -> PresetsParams:

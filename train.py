@@ -84,11 +84,14 @@ def train_config():
         extended_ae_model = extended_ae_model.to(device)
         parallel_device_ids = [0]  # "Parallel" 1-GPU model
     else:
-        device = torch.device('cuda')
+        device = torch.device('cuda:{}'.format(config.train.main_cuda_device_idx))
         extended_ae_model = extended_ae_model.to(device)
-        parallel_device_ids = None  # We use all available GPUs
-    ae_model_parallel = nn.DataParallel(extended_ae_model, device_ids=parallel_device_ids)
-    reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model, device_ids=parallel_device_ids)
+        # We use all available GPUs - the main one must be first in list
+        parallel_device_ids = [i for i in range(torch.cuda.device_count()) if i != config.train.main_cuda_device_idx]
+        parallel_device_ids.insert(0, config.train.main_cuda_device_idx)
+    ae_model_parallel = nn.DataParallel(extended_ae_model, device_ids=parallel_device_ids, output_device=device)
+    reg_model_parallel = nn.DataParallel(extended_ae_model.reg_model, device_ids=parallel_device_ids,
+                                         output_device=device)
 
 
     # ========== Losses (criterion functions) ==========
@@ -194,7 +197,7 @@ def train_config():
                     sample = next(dataloader_iter)
                     x_in, v_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
                 optimizer.zero_grad()
-                ae_out = ae_model_parallel(x_in)  # Spectral VAE - tuple output
+                ae_out = ae_model_parallel(x_in, sample_info)  # Spectral VAE - tuple output
                 z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac, x_out = ae_out
                 scalars['LatCorr/Train'].append(z_0_mu_logvar, z_0_sampled)  # TODO store also z_K_sampled
                 # Synth parameters regression. Flow-based: we do not care about v_out for backprop, but
@@ -220,12 +223,11 @@ def train_config():
                         scalars['Controls/QLoss/Train'].append(controls_num_eval_criterion(v_out, v_in))
                         scalars['Controls/Accuracy/Train'].append(controls_accuracy_criterion(v_out, v_in))
                     # Flow training stabilization loss?
-                    #    TODO remove if latent flow Batch-Norm is used (or if BN on last encoder layer)
-                    if extended_ae_model.is_flow_based_latent_space:
+                    flow_input_loss = torch.tensor([0.0], device=lat_loss.device)
+                    if extended_ae_model.is_flow_based_latent_space and\
+                            (config.train.latent_flow_input_regularization.lower() == 'dkl'):
                         flow_input_loss = 0.1 * config.train.beta * flow_input_dkl(z_0_mu_logvar[:, 0, :],
                                                                                    z_0_mu_logvar[:, 1, :])
-                    else:
-                        flow_input_loss = 0.0
                     if config.model.forward_controls_loss:  # unused params might be modified by this criterion
                         cont_loss = controls_criterion(v_out, v_in)
                     else:
@@ -249,10 +251,10 @@ def train_config():
         # = = = = = Evaluation on validation dataset (no profiling) = = = = =
         with torch.no_grad():
             ae_model_parallel.eval()  # BN stops running estimates
-            v_error = torch.Tensor().to(device='cuda')  # Params inference error (Tensorboard plot)
+            v_error = torch.Tensor().to(device=recons_loss.device)  # Params inference error (Tensorboard plot)
             for i, sample in enumerate(dataloader['validation']):
                 x_in, v_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
-                ae_out = ae_model_parallel(x_in)  # Spectral VAE - tuple output
+                ae_out = ae_model_parallel(x_in, sample_info)  # Spectral VAE - tuple output
                 z_0_mu_logvar, z_0_sampled, z_K_sampled, log_abs_det_jac, x_out = ae_out
                 v_out = reg_model_parallel(z_K_sampled)
                 scalars['LatCorr/Valid'].append(z_0_mu_logvar, z_0_sampled)  # TODO add z_K
