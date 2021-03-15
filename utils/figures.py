@@ -296,6 +296,8 @@ def plot_synth_preset_error(param_batch_errors, idx_helper: PresetIndexesHelper,
             if idx_helper.learnable_to_full[learn_idx] >= groups_start_vst_indexes[cur_group]:
                 param_groups_separations.append(learn_idx - 0.5)
                 cur_group += 1
+            if cur_group >= 6:
+                break  # Break for-loop after last groups separation
     else:
         print("[utils/figures.py] Unknown synth '{}' from given PresetIndexesHelper. "
               "No groups separations displayed on error plot.".format(idx_helper.synth_name))

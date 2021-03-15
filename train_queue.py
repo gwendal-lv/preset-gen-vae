@@ -8,6 +8,7 @@ See the actual training function in train.py
 
 import importlib  # to reload config.py between each run
 import numpy as np
+import copy
 
 import train
 import utils.exception
@@ -25,29 +26,44 @@ Please write two lists of dicts, such that:
 """
 
 # automatically train all cross-validation folds?
-train_all_k_folds = False
+train_all_k_folds = True
 
 # Run 0
-model_config_mods.append({})
-train_config_mods.append({})
+model_config_mods.append({'midi_notes': ((60, 85), )})
+train_config_mods.append({'n_epochs': 3, 'main_cuda_device_idx': 1})
 # Run 1
-model_config_mods.append({'run_name': "84_data_15k"})
-train_config_mods.append({})
+#model_config_mods.append({'run_name': "84_data_15k"})
+#train_config_mods.append({})
 
 
 
 
 if __name__ == "__main__":
-
     assert len(model_config_mods) == len(train_config_mods)
 
-    # TODO if performing k-fold cross validation trains, duplicate run mods to train all folds
-    if train_all_k_folds:
-        raise NotImplementedError()
+    import config  # Will be reloaded on each new run
 
+    # If performing k-fold cross validation trains, duplicate run mods to train all folds
+    if train_all_k_folds:
+        model_config_mods_kfolds, train_config_mods_kfolds = list(), list()
+        for base_run_index in range(len(model_config_mods)):
+            for fold_idx in range(config.train.k_folds):
+                # duplicate this run configuration, one duplicate per fold
+                model_config_mods_kfolds.append(copy.deepcopy(model_config_mods[base_run_index]))
+                train_config_mods_kfolds.append(copy.deepcopy(train_config_mods[base_run_index]))
+                train_config_mods_kfolds[-1]['current_k_fold'] = fold_idx
+                # k-fold index appended to the name
+                if 'run_name' in model_config_mods[base_run_index]:
+                    run_name = model_config_mods[base_run_index]['run_name'] + '_kf{}'.format(fold_idx)
+                else:
+                    run_name = config.model.run_name + '_kf{}'.format(fold_idx)
+                model_config_mods_kfolds[-1]['run_name'] = run_name
+        model_config_mods, train_config_mods = model_config_mods_kfolds, train_config_mods_kfolds
+
+
+    # = = = = = = = = = = Training queue: main loop = = = = = = = = = =
     for run_index in range(len(model_config_mods)):
         # Force config reload
-        import config
         importlib.reload(config)
 
         print("================================================================")
@@ -60,6 +76,7 @@ if __name__ == "__main__":
             config.model.__dict__[k] = v
         for k, v in train_config_mods[run_index].items():
             config.train.__dict__[k] = v
+        config.update_dynamic_config_params()  # Required if we modified critical hyper-parameters
 
         # Model train. An occasional model divergence (sometimes happen during first epochs) is tolerated
         #    Full-AR Normalizing Flows (e.g. MAF/IAF) are very unstable and hard to train on dim>100 latent spaces
