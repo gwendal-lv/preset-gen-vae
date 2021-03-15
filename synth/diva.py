@@ -16,9 +16,10 @@ import pickle
 
 class PresetDatabase:
     def __init__(self, num_workers=None):
-        self.param_names = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_params.pkl", "rb"))
-        self.all_presets = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_presets.pkl", "rb"))
-        self.db_path = ("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets.pkl")
+        self.param_names     = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_params.pkl", "rb"))
+        self.all_presets     = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_presets.pkl", "rb"))
+        self.all_presets_raw = pickle.load(open("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets/diva_presets_raw.pkl", "rb"))
+        self.db_path         = ("/home/irisib/Bureau/nn-synth-interp/synth/diva_presets.pkl")
 
     @staticmethod
     def get_db_path():
@@ -34,6 +35,19 @@ class PresetDatabase:
         return len(self.param_names)
 
     def get_preset_values(self, idx, plugin_format=True):
+        """ Returns a preset from the DB.
+        :param idx: index of preset
+        :param plugin_format: if True, returns a list of (param_index, param_value) tuples. If False, returns the
+            numpy array of param values. """
+        if plugin_format:
+            return self.all_presets[idx]
+        else:
+            preset_values = []
+            for element in self.all_presets[idx]:
+                preset_values.append(element[1])
+            return preset_values
+
+    def get_preset_raw_format(self, idx, plugin_format=True):
         """ Returns a preset from the DB.
         :param idx: index of preset
         :param plugin_format: if True, returns a list of (param_index, param_value) tuples. If False, returns the
@@ -64,25 +78,37 @@ class PresetDatabase:
     def _get_presets_folder():
         return pathlib.Path(__file__).parent.absolute().joinpath('diva_presets')
 
-    def write_all_presets_to_files(self, verbose=True): # QUESTION
+    def write_all_presets_to_files(self, format=True):
         """ Write all presets' parameter values to separate pickled files, for multi-processed multi-worker
         DataLoader. File names are presetXXXXXX_params.pickle where XXXXXX is the preset UID (it is not
         its row index)"""
-
         tuple_midi = []
         midi = []
-        parameters = pickle.load(open("diva_presets/diva_params.pkl", "rb"))
-        index_midi = list(range(len(self.param_names)))
-        with codecs.open("diva_presets.json", encoding="utf-8") as js:
-            diva_dataset = json.load(js)
-            for k_hash, element in diva_dataset.items():
-                for parameter in parameters:
-                    midi.append(element['MIDI'][parameter])
-                tuple_midi.append(list(zip(index_midi, midi)))
-                midi.clear()
-        new_file = open("diva_presets/diva_presets.pkl", "wb")
-        pickle.dump(tuple_midi, new_file)
-        new_file.close()
+        if format is True:
+            parameters = pickle.load(open("diva_presets/diva_params.pkl", "rb"))
+            index_midi = list(range(len(self.param_names)))
+            with codecs.open("diva_presets.json", encoding="utf-8") as js:
+                diva_dataset = json.load(js)
+                for k_hash, element in diva_dataset.items():
+                    for parameter in parameters:
+                        midi.append(element['MIDI'][parameter])
+                    tuple_midi.append(list(zip(index_midi, midi)))
+                    midi.clear()
+            new_file = open("diva_presets/diva_presets.pkl", "wb")
+            pickle.dump(tuple_midi, new_file)
+            new_file.close()
+        else:
+            parameters = pickle.load(open("diva_presets/diva_params.pkl", "rb"))
+            with codecs.open("diva_presets.json", encoding="utf-8") as js:
+                diva_dataset = json.load(js)
+                for k_hash, element in diva_dataset.items():
+                    for parameter in parameters:
+                        midi.append(element['MIDI'][parameter])
+                    tuple_midi.append(list(midi))
+                    midi.clear()
+            new_file = open("diva_presets/diva_presets_raw.pkl", "wb")
+            pickle.dump(tuple_midi, new_file)
+            new_file.close()
 
 class Diva:
 
@@ -150,7 +176,48 @@ class Diva:
         """ Internally sets the modified preset, and returns the list of parameter values. """
         assert self.current_preset is not None
         self.current_preset[0] = (0, 1.0)  # output main
-        self.current_preset[13] = (13, 1.0)  # output main
+        self.current_preset[13] = (13, 0.5)  # transpose
+        self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    def set_dry_params_off(self):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
+        for dry_param in [195, 205, 234, 244]:
+            self.current_preset[dry_param] = (dry_param, 1.0)
+        for wet_param in [182, 189, 196, 221, 228, 235]:
+            self.current_preset[wet_param] = (wet_param, 0.0)
+        self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    def set_osc_params_off(self, osc1=False, osc2=False, osc3 = False):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
+        if osc1 == False and osc2 == False and osc3 == False:
+            for osc_param in list(range(85, 138)):
+                self.current_preset[osc_param] = (osc_param, 0.0)
+        else:
+            if not osc1:
+                for osc_param in [86, 97]:
+                    self.current_preset[osc_param] = (osc_param, 0.0)
+            if not osc2:
+                for osc_param in [87, 98]:
+                    self.current_preset[osc_param] = (osc_param, 0.0)
+            if not osc3:
+                for osc_param in [88, 99]:
+                    self.current_preset[osc_param] = (osc_param, 0.0)
+        self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    def set_scope_params_off(self):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
+        for scope_param in [176, 177]:
+                self.current_preset[scope_param] = (scope_param, 0.0)
+        self.engine.set_patch(self.current_preset)
+        return [v for _, v in self.current_preset]
+
+    def set_fx_params_off(self):
+        """ Internally sets the modified preset, and returns the list of parameter values. """
+        for fx_param in [168, 200, 201, 239, 240, 263, 274, 275, 276, 278]:
+                self.current_preset[fx_param] = (fx_param, 0.0)
         self.engine.set_patch(self.current_preset)
         return [v for _, v in self.current_preset]
 
@@ -279,6 +346,28 @@ class Diva:
         }
         return index.get(param_index, -1)
 
+    @staticmethod
+    def get_numerical_params_indexes():
+        indexes = [0, 3, 8, 9, 10, 15, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 43, 44,
+                   45, 46, 47, 48, 54, 58, 59, 61, 62, 64, 68, 69, 71, 72, 74, 75, 76, 86, 87, 88, 89, 90, 91, 92, 93,
+                   94, 96, 97, 98, 99, 104, 106, 108, 110, 122, 131, 132, 134, 136, 138, 140, 141, 143, 145, 148, 149,
+                   151, 153, 154, 155, 160, 162, 164, 166, 167, 168, 171, 173, 175, 176, 177, 180, 181, 182, 184, 185,
+                   186, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206,
+                   208, 209, 210, 211, 212, 213, 214, 215, 219, 220, 221, 223, 224, 225, 227, 228, 229, 230, 231, 232,
+                   233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 247, 248, 249, 250, 251, 252, 253,
+                   254, 256, 258, 264, 265, 266, 267, 269, 274, 275, 276, 277]
+        return indexes
+
+    @staticmethod
+    def get_categorical_params_indexes():
+        indexes = [1, 2, 4, 5, 6, 7, 11, 12, 13, 14, 16, 17, 18, 19, 38, 39, 40, 41, 42, 49, 50, 51, 52, 53, 55, 56, 57,
+                   60, 63, 65, 66, 67, 70, 73, 77, 78, 79, 80, 81, 82, 83, 84, 85, 95, 100, 101, 102, 103, 105, 107,
+                   109, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 123, 124, 125, 126, 127, 128, 129,
+                   130, 133, 135, 137, 139, 142, 144, 146, 147, 150, 152, 156, 157, 158, 159, 161, 163, 165, 169,
+                   170, 172, 174, 178, 179, 183, 187, 207, 216, 217, 218, 222, 226, 246, 255, 257, 259, 260, 261,
+                   262, 263, 268, 270, 271, 272, 273, 278, 279, 280]
+        return indexes
+
 
 if __name__ == "__main__":
 
@@ -292,6 +381,8 @@ if __name__ == "__main__":
     diva_db.get_size_info()
     print("{} (loaded in {:.1f}s)".format(diva_db, time.time() - t0))
     names = diva_db.get_param_names()
+
+    diva_db.write_all_presets_to_files(format=False)
     #print("Labels example: {}".format(dexed_db.get_preset_labels_from_file(3)))
     #preset_values = PresetDatabase.get_preset_params_values_from_file(0)
     param_names = PresetDatabase.get_param_names(diva_db)
@@ -313,12 +404,10 @@ if __name__ == "__main__":
     print("\n============== PARAM DESC ==============\n")
     #print(diva.engine.get_plugin_parameters_description())
 
-    #pres = dexed.preset_db.get_preset_values(0, plugin_format=True)
-    #dexed.assign_preset_from_db(100)
     print("\n============== CURRENT PRESET ==============\n")
     print(diva.current_preset)
 
-    diva.render_note_to_file(57, 100, 5)
+    #diva.render_note_to_file(57, 100, 5) TODO
     audio = diva.render_note(57, 100)
     plt.figure(1)
     plt.subplot(211)

@@ -18,6 +18,7 @@ import torch.nn.functional
 class _Synth(Enum):
     GENERIC = 0  # Undefined synth - numerical params only, all are learnable
     DEXED = 1
+    DIVA = 2
 
 
 class PresetIndexesHelper:
@@ -51,10 +52,12 @@ class PresetIndexesHelper:
             self._synth = _Synth.GENERIC
         # Actual construction based on a dataset
         else:
-            assert nb_params is None
+            assert nb_params is not None
             self.synth_name = dataset.synth_name
             if self.synth_name.lower() == "dexed":
                 self._synth = _Synth.DEXED
+            if self.synth_name.lower() == "diva":
+                self._synth = _Synth.DIVA
             self._param_names = dataset.preset_param_names
             self._vst_param_learnable_model = dataset.vst_param_learnable_model
             self._param_cardinals = [dataset.get_preset_param_cardinality(vst_idx, learnable_representation=True)
@@ -77,6 +80,7 @@ class PresetIndexesHelper:
                     self._full_to_learnable.append(learnable_indexes)
                 else:
                     raise ValueError("Unknown param learning model '{}'".format(dataset.vst_param_learnable_model[vst_idx]))
+
             self._learnable_preset_size = current_learnable_idx
             # Final inits
             self._numerical_vst_params = dataset.numerical_vst_params
@@ -85,6 +89,7 @@ class PresetIndexesHelper:
         # Dict keys are VST 'full-preset' indexes
         self._cat_idx_learned_as_num = dict()  # Dict of integer indexes
         self._cat_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
+
         for vst_idx in self.categorical_vst_params:
             learnable_model = self.vst_param_learnable_model[vst_idx]
             if learnable_model is not None:
@@ -103,7 +108,7 @@ class PresetIndexesHelper:
             if learnable_model is not None:
                 if learnable_model == 'num':  # 1 learnable index
                     self._num_idx_learned_as_num[vst_idx] = self.full_to_learnable[vst_idx]
-                    assert isinstance(self._num_idx_learned_as_num[vst_idx], int)
+                    #assert isinstance(self._num_idx_learned_as_num[vst_idx], int)
                 elif learnable_model == 'cat':  # list of learnable indexes
                     self._num_idx_learned_as_cat[vst_idx] = self.full_to_learnable[vst_idx]
                     assert isinstance(self._num_idx_learned_as_cat[vst_idx], Iterable)
@@ -436,21 +441,3 @@ class DexedPresetsParams(PresetsParams):
                     raise ValueError("Unexpected vst param learnable model (expected iterable or int)")
         return learnable_presets
 
-
-class DivaPresetsParams(PresetsParams):
-    """ """
-    def __init__(self, dataset, full_presets: Optional[torch.Tensor] = None, learnable_presets: Optional[torch.Tensor] = None):
-        super().__init__(dataset, full_presets, learnable_presets)
-        self._algos = dataset.algos  # dataset must be a DexedPresetDataset
-        # find algo column index in a learnable presets params tensor
-        self._algo_learnable_index = self.idx_helper.full_to_learnable[4]
-
-    def get_full(self, apply_constraints=True) -> torch.Tensor:
-        full_presets = super().get_full(apply_constraints)
-        classes_one_hot = self._learnable_presets[:, self.idx_helper.full_to_learnable[4]]
-        classes = torch.argmax(classes_one_hot, dim=-1)  # classes = dataset algo indexes
-        return full_presets
-
-    def get_learnable(self) -> torch.Tensor:
-        learnable_presets = super().get_learnable()
-        return learnable_presets

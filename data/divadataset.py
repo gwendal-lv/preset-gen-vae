@@ -11,16 +11,19 @@ import torch
 import torch.utils
 import soundfile as sf
 import json
-from multiprocessing import Process
+from multiprocessing import *
 import multiprocessing
 from datetime import datetime
+from data.preset import PresetsParams, PresetIndexesHelper
+
 
 class DivaDataset(PresetDataset):
     def __init__(self, note_duration = 3.0, n_fft = 512, fft_hop = 512,
                  midi_note=60, midi_velocity=100, n_mel_bins=-1,
-                 normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization ='min_max'
-                 ):
+                 normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization ='min_max',
+                 constant_filter_and_tune_params=True):
         """
+        :param vst_params_learned_as_categorical:
         :param note_duration: Tuple: MIDI Note (on_duration, off_duration) in seconds
         :param n_fft: Width of the FFT window for spectrogram computation
         :param fft_hop: STFT hop length (in samples)
@@ -38,12 +41,25 @@ class DivaDataset(PresetDataset):
         self._total_nb_presets = self.diva_db.get_nb_presets()
         self._total_nb_params = self.diva_db.get_nb_params()
         self._param_names = self.diva_db.get_param_names()
-        self.valid_preset_UIDs = list(range(self._total_nb_presets))
-        self.learnable_params_idx = self.valid_preset_UIDs
-        for idx in [0, 13, 17, 39, 50, 143, 174, 175, 261, 262]:
-            self.learnable_params_idx.remove(idx)
-        #del diva_db
+        self.valid_preset_UIDs = list(range(0, self._total_nb_presets))
+        self.learnable_params_idx = list(range(0, self._total_nb_params))
+        if constant_filter_and_tune_params is True:
+            for vst_idx in [0, 13, 17, 39, 50, 143, 174, 175, 261, 262]:
+                self.learnable_params_idx.remove(vst_idx)
+        self.diva_synth = diva.Diva()
+        self._vst_param_learnable_model = list()
+        for vst_idx in range(self.total_nb_params):
+            if vst_idx not in self.learnable_params_idx:
+                self._vst_param_learnable_model.append(None)
+            else:
+                param_cardinality = self.diva_synth.get_param_cardinality(vst_idx)
+                if param_cardinality > 0:
+                    self._vst_param_learnable_model.append('cat')
+                else:
+                    self._vst_param_learnable_model.append('num')
+        # - - - Final initializations - - -
         self._params_cardinality = np.asarray([diva.Diva.get_param_cardinality(idx) for idx in range(self.total_nb_params)])
+        self._preset_idx_helper = PresetIndexesHelper(dataset=self, nb_params=self._total_nb_presets)
         self._load_spectrogram_stats()  # Must be called after super() ctor
 
     @property
@@ -73,10 +89,22 @@ class DivaDataset(PresetDataset):
     def preset_param_names(self):
         return self._param_names
 
+    @property
+    def numerical_vst_params(self):
+        return diva.Diva.get_numerical_params_indexes()
+
+    @property
+    def categorical_vst_params(self):
+        return diva.Diva.get_categorical_params_indexes()
+
+    @property
+    def vst_param_learnable_model(self):
+        return self._vst_param_learnable_model
+
     def get_preset_param_cardinality(self, idx, learnable_representation=True):
         return self._params_cardinality[idx]
 
-    def get_full_preset_params(self, preset_UID):
+    def get_full_preset(self, preset_UID):
         return self.diva_db.get_preset_values(preset_UID)
 
     def _render_audio(self, preset_params, midi_note, midi_velocity):
@@ -100,12 +128,33 @@ class DivaDataset(PresetDataset):
 
     def get_wav_file(self, preset_UID, midi_note, midi_velocity):
         file_path = self.get_wav_file_path(preset_UID, midi_note, midi_velocity)
-        print(file_path)
         try:
             return sf.read(file_path)
         except RuntimeError:
             raise RuntimeError("[data/dataset.py] Can't open file {}. Please pre-render audio files for this "
                                "dataset configuration.".format(file_path))
+
+    def Configure_parameters(self, constant_filter_and_tune_params=True, osc_param_off=True, dry_param_off=True, scope_param_off=True, fx_param_off=True):
+        new_raw_presets = []
+        preset_values = []
+        for preset in self.diva_db.all_presets_raw:
+            self.diva_synth.current_preset = self.diva_db.get_params_in_plugin_format(self.diva_db, preset)
+            if constant_filter_and_tune_params is True:
+                self.diva_synth.set_default_general_filter_and_tune_params()
+            if osc_param_off is True:
+                self.diva_synth.set_osc_params_off()
+            if dry_param_off is True:
+                self.diva_synth.set_dry_params_off()
+            if scope_param_off is True:
+                self.diva_synth.set_scope_params_off()
+            if fx_param_off is True:
+                self.diva_synth.set_fx_params_off()
+            for el in self.diva_synth.current_preset:
+                preset_values.append(el[1])
+            new_raw_presets.append(list(preset_values))
+            preset_values.clear()
+
+        self.diva_db.all_presets_raw = new_raw_presets
 
     def generate_wav_files(self):
         """ Reads all presets (names, param values, and labels) from .pickle and .txt files
@@ -118,10 +167,10 @@ class DivaDataset(PresetDataset):
          """
         # TODO multiple midi notes generation
         midi_note, midi_velocity = self.midi_note, self.midi_velocity
-        for i in range(len(self)):   # TODO full dataset
+        for i in range(0, len(self)):   # TODO full dataset
             preset_UID = self.valid_preset_UIDs[i]
             # Constrained params (1-element batch)
-            preset_params = self.get_full_preset_params(preset_UID)
+            preset_params = self.get_full_preset(preset_UID)
             x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)  # Re-Loads the VST
             sf.write(self.get_wav_file_path(preset_UID, midi_note, midi_velocity), x_wav, Fs, subtype='FLOAT')
             if i % 50 == 0:
@@ -132,7 +181,7 @@ class DivaDataset(PresetDataset):
         midi_note, midi_velocity = self.midi_note, self.midi_velocity
         for i in range(begin, end):
             preset = self.valid_preset_UIDs[i]
-            preset_params = self.get_full_preset_params(self.valid_preset_UIDs[i])
+            preset_params = self.get_full_preset(self.valid_preset_UIDs[i])
             x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)
             sf.write(self.get_wav_file_path(preset, midi_note, midi_velocity), x_wav, Fs, subtype='FLOAT')
             print("\n")
@@ -143,66 +192,40 @@ class DivaDataset(PresetDataset):
         print(process_name + " : Finished writing {} .wav files".format((end - begin)))
         print(datetime.now())
 
-    def __getitem__(self, i):
-        """ Returns a tuple containing a 2D scaled dB spectrogram tensor (1st dim: freq; 2nd dim: time),
-        a 1D tensor of parameter values in [0;1], and a 1d tensor with remaining int info (preset UID, midi note, vel).
+    def get_full_preset_params(self, preset_UID):
+        # TODO FAIRE DES ECHANTILLONS
+        raw_full_preset = self.diva_db.all_presets_raw
+        flatten_list = [j for sub in raw_full_preset for j in sub]
+        tensor_2d = torch.unsqueeze(torch.tensor(flatten_list, dtype=torch.float32), 0)
+        return PresetsParams(dataset=self, full_presets=tensor_2d, learnable_presets=None)
 
-        If this dataset generates audio directly from the synth, only 1 dataloader is allowed.
-        A 30000 presets dataset require approx. 7 minutes to be generated on 1 CPU. """
-        # TODO on-the-fly audio generation. We should try:
-        #  - Use shell command to run a dedicated script. The script writes AUDIO_SAMPLE_TEMP_ID.wav
-        #  - wait for the file to be generated on disk (or for the command to notify... something)
-        #  - read and delete this .wav file
-        midi_note = self.midi_note
-        midi_velocity = self.midi_velocity
-        preset_UID = self.valid_preset_UIDs[i]
-
-        preset_params = self.get_full_preset_params(preset_UID)
-        # TODO multi-wav (multi MIDI note) loading (or rendering... not implemented yet)
-        x_wav, _ = self.get_wav_file(preset_UID, midi_note, midi_velocity)
-        # Spectrogram, or Mel-Spectrogram if requested (see self.spectrogram ctor arguments)
-        spectrogram = self.spectrogram(x_wav)
-        if self.spectrogram_normalization == 'min_max':  # result in [-1, 1]
-            spectrogram = -1.0 + (spectrogram - self.spec_stats['min'])\
-                          / ((self.spec_stats['max'] - self.spec_stats['min']) / 2.0)
-        elif self.spectrogram_normalization == 'mean_std':
-            spectrogram = (spectrogram - self.spec_stats['mean']) / self.spec_stats['std']
-        # Tuple output. Warning: torch.from_numpy does not copy values (torch.tensor(...) ctor does)
-        # We add a first dimension to the spectrogram, which is a 1-ch 'greyscale' image
-        # TODO multi-channel spectrograms with multiple MIDI notes (and velocities?)
-        return torch.unsqueeze(spectrogram, 0), \
-            torch.tensor([preset_UID, midi_note, midi_velocity], dtype=torch.int32)
-
+    def multi_run_wrapper(self, args):
+        return self.generate_wav_files_multi_process(*args)
 
 if __name__ == "__main__":
-    # TODO regenerate audio and spectrogram stats files
     # ============== DATA RE-GENERATION - FROM config.py ==================
     regenerate_wav = False  # quite long (15min, full dataset, 1 midi note)
-    regenerate_wav_multi_process = True
+    regenerate_wav_multi_process = False
     regenerate_spectrograms_stats = False  # approx 3 min
 
     # No label restriction, no normalization, etc...
     # But: OPERATORS LIMITATIONS and DEFAULT PARAM CONSTRAINTS (main params (filter, transpose,...) are constant)
-    diva_dataset = DivaDataset(note_duration = 3.0, n_fft = 512, fft_hop = 512,
-                               midi_note=60, midi_velocity=100, n_mel_bins=-1,
-                               normalize_audio=False, spectrogram_min_dB=-120.0,
-                               spectrogram_normalization ='min_max'
-                               )
-    for i in range(2):
+    diva_dataset = DivaDataset(note_duration=3.0, n_fft=512, fft_hop=512, midi_note=60, midi_velocity=100,
+                               n_mel_bins=-1, normalize_audio=False, spectrogram_min_dB=-120.0,
+                               spectrogram_normalization='min_max')
+    diva_dataset.Configure_parameters()
+
+    for i in range(1):
         test = diva_dataset[i]  # try get an item - for debug purposes
         print(diva_dataset)  # All files must be pre-rendered before printing
         print(test)
 
     if regenerate_wav_multi_process:
         num_processor = multiprocessing.cpu_count()
-        process_list = []
-        print(num_processor)
-        for i in range (0, num_processor):
-            process_list.append(Process(target=diva_dataset.generate_wav_files_multi_process, args=(int(len(diva_dataset)/num_processor * i), int(len(diva_dataset)/num_processor * (i + 1)), "Process n°" + str(i))))
-        for process in process_list:
-            print(process)
-            process.start()
-            process.join()
+        print(multiprocessing.cpu_count())
+        with Pool(num_processor) as p:
+            p.map(diva_dataset.multi_run_wrapper, [(0, 2807,"Process 1"), (2808, 5613,"Process 2"), (5614, 8420,"Process 3"), (8421, 11226,"Process 4")])
+            print(p)
 
     if regenerate_wav:
         # WRITE ALL WAV FILES (approx. 10.5Go for 4.0s audio, 1 midi note)
