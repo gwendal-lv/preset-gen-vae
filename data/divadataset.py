@@ -20,7 +20,9 @@ from data.preset import PresetsParams, PresetIndexesHelper
 class DivaDataset(PresetDataset):
     def __init__(self, note_duration = 3.0, n_fft = 512, fft_hop = 512,
                  midi_note=60, midi_velocity=100, n_mel_bins=-1,
+                 multi_note_spectrogram=False,
                  normalize_audio=False, spectrogram_min_dB=-120.0, spectrogram_normalization ='min_max',
+                 midi_notes=((60, 100),),
                  constant_filter_and_tune_params=True):
         """
         :param vst_params_learned_as_categorical:
@@ -34,9 +36,8 @@ class DivaDataset(PresetDataset):
         :param spectrogram_normalization: 'min_max' to get output spectrogram values in [-1, 1], or 'mean_std'
             to get zero-mean unit-variance output spectrograms. None to disable normalization.
         """
-        super().__init__(note_duration, n_fft, fft_hop, midi_note, midi_velocity, n_mel_bins,
+        super().__init__(note_duration, n_fft, fft_hop, midi_notes, multi_note_spectrogram, midi_note, midi_velocity, n_mel_bins,
                          normalize_audio, spectrogram_min_dB, spectrogram_normalization)
-
         self.diva_db = diva.PresetDatabase()
         self._total_nb_presets = self.diva_db.get_nb_presets()
         self._total_nb_params = self.diva_db.get_nb_params()
@@ -57,9 +58,13 @@ class DivaDataset(PresetDataset):
                     self._vst_param_learnable_model.append('cat')
                 else:
                     self._vst_param_learnable_model.append('num')
+        self._params_default_values = dict()
+        if constant_filter_and_tune_params:
+            self._params_default_values[0] = 1.0
+            self._params_default_values[13] = 0.5
         # - - - Final initializations - - -
         self._params_cardinality = np.asarray([diva.Diva.get_param_cardinality(idx) for idx in range(self.total_nb_params)])
-        self._preset_idx_helper = PresetIndexesHelper(dataset=self, nb_params=self._total_nb_presets)
+        self._preset_idx_helper = PresetIndexesHelper(dataset=self, nb_params=None)
         self._load_spectrogram_stats()  # Must be called after super() ctor
 
     @property
@@ -100,6 +105,16 @@ class DivaDataset(PresetDataset):
     @property
     def vst_param_learnable_model(self):
         return self._vst_param_learnable_model
+
+    @property
+    def params_default_values(self):
+        return self._params_default_values
+
+    @property
+    def preset_indexes_helper(self):
+        """ Returns the data.preset.PresetIndexesHelper instance which helps convert full/learnable presets
+        from this dataset. """
+        return self._preset_idx_helper  # Default: identity
 
     def get_preset_param_cardinality(self, idx, learnable_representation=True):
         return self._params_cardinality[idx]
@@ -166,16 +181,18 @@ class DivaDataset(PresetDataset):
          Also writes a audio_render_constraints.json file that should be checked when loading data.
          """
         # TODO multiple midi notes generation
-        midi_note, midi_velocity = self.midi_note, self.midi_velocity
-        for i in range(0, len(self)):   # TODO full dataset
-            preset_UID = self.valid_preset_UIDs[i]
-            # Constrained params (1-element batch)
-            preset_params = self.get_full_preset(preset_UID)
-            x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)  # Re-Loads the VST
-            sf.write(self.get_wav_file_path(preset_UID, midi_note, midi_velocity), x_wav, Fs, subtype='FLOAT')
-            if i % 50 == 0:
-                print("Writing .wav files... ({}/{})".format(i, len(self)))
-        print("Finished writing {} .wav files".format(len(self)))
+        for notes in self.midi_notes:
+            print("calcul .wav files of" + "(" + str(notes[0]) + ", " + str(notes[1]) + ")")
+            midi_note, midi_velocity = notes[0], notes[1]
+            for i in range(0, len(self)):   # TODO full dataset
+                preset_UID = self.valid_preset_UIDs[i]
+                # Constrained params (1-element batch)
+                preset_params = self.get_full_preset(preset_UID)
+                x_wav, Fs = self._render_audio(preset_params, midi_note, midi_velocity)  # Re-Loads the VST
+                sf.write(self.get_wav_file_path(preset_UID, midi_note, midi_velocity), x_wav, Fs, subtype='FLOAT')
+                if i % 50 == 0:
+                    print("Writing .wav files... ({}/{})".format(i, len(self)))
+            print("Finished writing {} .wav files".format(len(self)))
 
     def generate_wav_files_multi_process(self, begin, end, process_name):
         midi_note, midi_velocity = self.midi_note, self.midi_velocity
@@ -210,10 +227,16 @@ if __name__ == "__main__":
 
     # No label restriction, no normalization, etc...
     # But: OPERATORS LIMITATIONS and DEFAULT PARAM CONSTRAINTS (main params (filter, transpose,...) are constant)
-    diva_dataset = DivaDataset(note_duration=3.0, n_fft=512, fft_hop=512, midi_note=60, midi_velocity=100,
+    diva_dataset = DivaDataset(note_duration=3.0, n_fft=512, fft_hop=512, multi_note_spectrogram=False,
+                               midi_note=60, midi_velocity=100, midi_notes=((40, 85), (50, 85), (60, 42), (60, 85)),
                                n_mel_bins=-1, normalize_audio=False, spectrogram_min_dB=-120.0,
                                spectrogram_normalization='min_max')
-    diva_dataset.Configure_parameters()
+
+    diva_dataset.Configure_parameters(constant_filter_and_tune_params=True,
+                                      osc_param_off=False,
+                                      dry_param_off=True,
+                                      scope_param_off=False,
+                                      fx_param_off=True)
 
     for i in range(1):
         test = diva_dataset[i]  # try get an item - for debug purposes

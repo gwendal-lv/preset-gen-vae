@@ -52,7 +52,7 @@ class PresetIndexesHelper:
             self._synth = _Synth.GENERIC
         # Actual construction based on a dataset
         else:
-            assert nb_params is not None
+            assert nb_params is None
             self.synth_name = dataset.synth_name
             if self.synth_name.lower() == "dexed":
                 self._synth = _Synth.DEXED
@@ -103,12 +103,12 @@ class PresetIndexesHelper:
                     raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
         self._num_idx_learned_as_num = dict()  # Dict of integer indexes
         self._num_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
-        for vst_idx in self.numerical_vst_params:
+        for vst_idx in self.numerical_vst_params :
             learnable_model = self.vst_param_learnable_model[vst_idx]
             if learnable_model is not None:
                 if learnable_model == 'num':  # 1 learnable index
                     self._num_idx_learned_as_num[vst_idx] = self.full_to_learnable[vst_idx]
-                    #assert isinstance(self._num_idx_learned_as_num[vst_idx], int)
+                    assert isinstance(self._num_idx_learned_as_num[vst_idx], int)
                 elif learnable_model == 'cat':  # list of learnable indexes
                     self._num_idx_learned_as_cat[vst_idx] = self.full_to_learnable[vst_idx]
                     assert isinstance(self._num_idx_learned_as_cat[vst_idx], Iterable)
