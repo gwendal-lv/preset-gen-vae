@@ -12,6 +12,8 @@ import os
 import pickle
 import multiprocessing
 import time
+from typing import Iterable
+
 import numpy as np
 from scipy.io import wavfile
 import sqlite3
@@ -125,7 +127,7 @@ class PresetDatabase:
             return preset_values
 
     @staticmethod
-    def get_params_in_plugin_format(params):
+    def get_params_in_plugin_format(params: Iterable):
         """ Converts a 1D array of param values into an list of (idx, param_value) tuples """
         preset_values = np.asarray(params, dtype=np.double)  # np.float32 is not valid for RenderMan
         # Dexed parameters are nicely ordered from 0 to 154
@@ -361,7 +363,7 @@ class Dexed:
         to the encoding network. """
         # (6. 'OSC KEY SYNC' (LFO) does NOT depend on the midi note (it syncs or not LFO phase on midi event).)
         # All the KEY L/R stuff (with breakpoint at some MIDI note) effects are really dependant on the MIDI key.
-        # 36. breakpoint.
+        # 36. breakpoint. Values 0 to 99 correspond to MIDI notes 9 to 108 (A-1 to C8)
         # 37/38: L/R scale (curve) depth.
         # 39/40: L/R scale (=curve) type: +/-lin or +/-exp.
         return [(36 + 22*i) for i in range(6)]\
@@ -461,7 +463,7 @@ if __name__ == "__main__":
     print("numerical VSTi params: {}".format(Dexed.get_numerical_params_indexes()))
     print("categorical VSTi params: {}".format(Dexed.get_categorical_params_indexes()))
 
-    if False:
+    if True:
         # ***** RE-WRITE ALL PRESETS TO SEPARATE PICKLE/TXT FILES *****
         # Approx. 360Mo (yep, the SQLite DB is much lighter...) for all params values + names + labels
         dexed_db.write_all_presets_to_files()

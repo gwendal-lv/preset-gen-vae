@@ -17,90 +17,116 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 model = _Config()
 model.name = "ExtVAE2"
-model.run_name = '11_lr_warmup'  # run: different hyperparams, optimizer, etc... for a given model
+model.run_name = '95_all_dexed_ops'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
-model.params_regression_architecture = 'mlp_3l1024'
+# Possible values: 'flow_realnvp_4l180', 'mlp_3l1024', ... (configurable numbers of layers and neurons)
+model.params_regression_architecture = 'flow_realnvp_6l300'
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
+model.sampling_rate = 22050
 model.stft_args = (1024, 256)  # fft size and hop size
 model.mel_bins = 257  # -1 disables Mel-scale spectrogram. Try: 257, 513, ...
 model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO implement
+# Tuple of (pitch, velocity) tuples. Using only 1 midi note is fine.
+# model.midi_notes = ((60, 85), )  # Reference note
+model.midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
+model.stack_spectrograms = True  # If True, dataset will feed multi-channel spectrograms to the encoder
+# If True, each preset is presented several times per epoch (nb of train epochs must be reduced) such that the
+# dataset size is artificially increased (6x bigger with 6 MIDI notes) -> warmup and patience epochs must be scaled
+model.increased_dataset_size = None  # See update_dynamic_config_params()
 model.spectrogram_min_dB = -120.0
 # Possible spectrogram sizes:
-# (513, 433): audio 5.0s, fft size 1024, fft hop 256
-# (257, 347): audio 4.0s, fft size 512 (or fft 1024 w/ mel_bins 257), fft hop 256
+#   (513, 433): audio 5.0s, fft size 1024, fft hop 256
+#   (257, 347): audio 4.0s, fft size 512 (or fft 1024 w/ mel_bins 257), fft hop 256
 model.spectrogram_size = (257, 347)  # see data/dataset.py to retrieve this from audio/stft params
-model.dim_z = 256  # Latent space dimension
-model.latent_flows_count = 4  # = K, number of flow transforms from z_0 to z_K
-model.latent_flows_hidden_features = 200  # Features of the MLPs that compute affine coefficients of the AR transforms
-# Modeling of synth controls probability distributions
-model.controls_losses = 'MSE'  # MSE-only, or MSE for continuous controls and Categorical for discrete
-# TODO which loss precisely?
+model.input_tensor_size = None  # see update_dynamic_config_params()
+# If True, encoder output is reduced by 2 for 1 MIDI pitch and 1 velocity to be concatenated to the latent vector
+model.concat_midi_to_z = None  # See update_dynamic_config_params()
+# Latent space dimension  *************** When using a Flow regressor, this dim is automatically set ******************
+model.dim_z = 256  # Including possibly concatenated midi pitch and velocity
+# Latent flow architecture, e.g. 'realnvp_4l200' (4 flows, 200 hidden features per flow)
+#    - base architectures can be realnvp, maf, ...
+#    - set to None to disable latent space flow transforms
+model.latent_flow_arch = 'realnvp_6l300'
+# If True, loss compares v_out and v_in. If False, we will flow-invert v_in to get loss in the q_Z0 domain.
+# This option has implications on the regression model itself (the flow will be used in direct or inverse order)
+model.forward_controls_loss = True  # Must be true for non-invertible MLP regression
+
 model.synth = 'dexed'
 # Dexed-specific auto rename: '*' in 'al*_op*_lab*' will be replaced by the actual algorithms, operators and labels
 model.synth_args_str = 'al*_op*_lab*'  # Auto-generated string (see end of script)
-# TODO categorical params (by full-preset index)
-model.synth_params_count = -1  # Will be inferred automatically from a constructed dataset
+model.synth_params_count = -1  # Will be set automatically - see data.build.get_full_and_split_datasets
+model.learnable_params_tensor_length = -1  # Will be set automatically - see data.build.get_full_and_split_datasets
+# Modeling of synth controls probability distributions
 # Possible values: None, 'vst_cat' or 'all<=xx' where xx is numerical params threshold cardinal
 model.synth_vst_params_learned_as_categorical = 'all<=32'
 # flags/values to describe the dataset to be used
-model.dataset_labels = ('harmonic',)  # tuple of labels, or None to use all available labels
+model.dataset_labels = ('harmonic', 'percussive')  # tuple of labels, or None to use all available labels
 # Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
 # Other synth: ...?
-model.dataset_synth_args = ([1, 2, 7, 8, 9, 14], [1, 2, 3])
+model.dataset_synth_args = ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
+                            [1, 2, 3, 4, 5, 6])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
 
 train = _Config()
 train.start_datetime = datetime.datetime.now().isoformat()
-train.minibatch_size = 256
-train.datasets_proportions = (0.8, 0.1, 0.1)  # train/validation/test sub-datasets sizes (total must be 1.0)
-train.k_folds = 5  # TODO implement
-train.current_k_fold = 1  # TODO implement
+train.minibatch_size = 160
+train.main_cuda_device_idx = 1  # CUDA device for nonparallel operations (losses, ...)
+train.test_holdout_proportion = 0.2
+train.k_folds = 5
+train.current_k_fold = 0
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
-train.n_epochs = 1000  # Total number of epochs (including previous training epochs)
+# Total number of epochs (including previous training epochs)
+train.n_epochs = 500  # See update_dynamic_config_params()
 train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
-train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE. Specific loss for Flow VAE
-# Losses normalization allow to get losses in the same order of magnitude, but prevents to optimize the actual ELBO
+train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE (Flow VAE has its own specific loss)
+# When using a latent flow z0-->zK, z0 is not regularized. To keep values around 0.0, batch-norm or a 0.1Dkl can be used
+train.latent_flow_input_regularization = 'bn'  # 'bn' (on encoder output) or 'dkl' (on q_Z0 gaussian flow input)
+# Losses normalization allow to get losses in the same order of magnitude, but does not optimize the true ELBO.
 # When un-normalized, the reconstruction loss (log-probability of a multivariate gaussian) is orders of magnitude
-# bigger than other losses.
+# bigger than other losses. Train does not work with normalize=False at the moment - use train.beta to compensate
 train.normalize_losses = True  # Normalize all losses over the vector-dimension (e.g. spectrogram pixels count, D, ...)
-train.ae_reconstruction_loss = 'MSE'  # Implies a fixed-variance gaussian model for spectrogram pixels
-train.metrics = ('ReconsLoss', 'LatLoss')  # unused... metrics currently hardcoded in train.py
 
-# TODO train regression network alone when full-train has finished
-#    that requires two optimizers and two schedulers (one full-model, one for regression)
+
+# TODO train regression network alone when full-train has finished?
 train.optimizer = 'Adam'
 # Maximal learning rate (reached after warmup, then reduced on plateaus)
-#    TODO decrease LR if non-normalized losses (which are expected to be at least 2 orders of magnitude bigger)
-train.initial_learning_rate = 3e-4
+# LR decreased if non-normalized losses (which are expected to be 90,000 times bigger with a 257x347 spectrogram)
+train.initial_learning_rate = 2e-4  # e-9 LR with e+4 loss does not allow any train (vanishing grad?)
 # Learning rate warmup (see https://arxiv.org/abs/1706.02677)
-train.lr_warmup_epochs = 10
+train.lr_warmup_epochs = 10  # See update_dynamic_config_params()
 train.lr_warmup_start_factor = 0.1
 train.adam_betas = (0.9, 0.999)  # default (0.9, 0.999)
 train.weight_decay = 1e-4  # Dynamic weight decay?
-train.fc_dropout = 0.2
-train.beta = 1.0  # Regularization factor for the latent loss
-train.beta_start_value = 0.1  # 0.5 works quite well (10 warmup epochs). Cannot be zero (reconstruction diverges)
-train.beta_warmup_epochs = 100  # Epochs of warmup increase from 0.0 to beta
+train.fc_dropout = 0.3
+train.reg_fc_dropout = 0.4
+# (beta<1, normalize=True) corresponds to (beta>>1, normalize=False) in the beta-VAE formulation (ICLR 2017)
+train.beta = 0.2  # latent loss factor - use much lower value (e-2) to get closer the ELBO
+train.beta_start_value = 0.1  # Should not be zero (risk of a very unstable training)
+# Epochs of warmup increase from start_value to beta
+train.beta_warmup_epochs = 40  # See update_dynamic_config_params()
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
-train.scheduler_name = 'ReduceLROnPlateau'  # TODO CosineAnnealing
+train.scheduler_name = 'ReduceLROnPlateau'  # TODO try CosineAnnealing
 # Possible values: 'VAELoss' (total), 'ReconsLoss', 'Controls/BackpropLoss', ... All required losses will be summed
-train.scheduler_loss = ('ReconsLoss', 'Controls/BackpropLoss')
+train.scheduler_loss = ('ReconsLoss/Backprop', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
-train.scheduler_patience = 20  # Longer patience with smaller datasets and quite unstable trains TODO increase to 30
+# Set a longer patience with smaller datasets and quite unstable trains
+train.scheduler_patience = 10  # See update_dynamic_config_params()
+train.scheduler_cooldown = 10  # See update_dynamic_config_params()
 train.scheduler_threshold = 1e-4
-# TODO different threshold for non-normalized losses (LR is much smaller)
-train.early_stop_lr_threshold = 1e-7  # Training considered "dead" when dynamic LR reaches this value
+# Training considered "dead" when dynamic LR reaches this value
+train.early_stop_lr_threshold = None  # See update_dynamic_config_params()
 
 train.verbosity = 2  # 0: no console output --> 3: fully-detailed per-batch console output
 train.init_security_pause = 0.0  # Short pause before erasing an existing run
-train.logged_samples_count = 4  # Number of logged audio and spectrograms for a given epoch
+# Number of logged audio and spectrograms for a given epoch
+train.logged_samples_count = 4  # See update_dynamic_config_params()
 train.logged_samples_period = 10  # Epoch periods (not to store too much .wav/.png data)
 train.profiler_args = {'enabled': False, 'use_cuda': True, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
@@ -108,29 +134,58 @@ train.profiler_full_trace = False  # If True, runs only a few batches then exits
 train.profiler_1_GPU = False  # Profiling on only 1 GPU allow a much better understanding of trace.json
 
 
-# Mini-batch size can be smaller for the last mini-batches and/or during evaluation
-# TODO multi-channel spectrograms
-model.input_tensor_size = (train.minibatch_size, 1, model.spectrogram_size[0], model.spectrogram_size[1])
-
-
-# Automatic model.synth string update - to retrieve this info in 1 Tensorboard string hparam
-if model.synth == "dexed":
-    if model.dataset_synth_args[0] is not None:  # Algos
-        model.synth_args_str = model.synth_args_str.replace("al*", "al" +
-                                                            '.'.join([str(alg) for alg in model.dataset_synth_args[0]]))
-    if model.dataset_synth_args[1] is not None:  # Operators
-        model.synth_args_str = model.synth_args_str.replace("_op*", "_op" +
-                                                            ''.join([str(op) for op in model.dataset_synth_args[1]]))
-    if model.dataset_labels is not None:  # Labels
-        model.synth_args_str = model.synth_args_str.replace("_lab*", '_' +
-                                                            '_'.join([label[0:4] for label in model.dataset_labels]))
-else:
-    raise NotImplementedError("Unknown synth prefix for model.synth '{}'".format(model.synth))
-
-
 evaluate = _Config()
 evaluate.epoch = -1  # Trained model to be loaded for post-training evaluation.
 
 
 # ---------------------------------------------------------------------------------------
+
+
+def update_dynamic_config_params():
+    """
+    Updates dynamic some global attributes of this config.py module.
+    This function should be called after any modification of this module's attributes.
+    """
+
+    # stack_spectrograms must be False for 1-note datasets - security check
+    model.stack_spectrograms = model.stack_spectrograms and (len(model.midi_notes) > 1)
+    # Artificially increased data size?
+    model.increased_dataset_size = (len(model.midi_notes) > 1) and not model.stack_spectrograms
+    model.concat_midi_to_z = (len(model.midi_notes) > 1) and not model.stack_spectrograms
+    # Mini-batch size can be smaller for the last mini-batches and/or during evaluation
+    model.input_tensor_size = (train.minibatch_size, 1 if not model.stack_spectrograms else len(model.midi_notes),
+                               model.spectrogram_size[0], model.spectrogram_size[1])
+
+    # Dynamic train hyper-params
+    train.early_stop_lr_threshold = train.initial_learning_rate * 1e-3
+    train.logged_samples_count = max(train.logged_samples_count, len(model.midi_notes))
+    # Train hyper-params (epochs counts) that should be reduced with artificially increased datasets
+    if model.increased_dataset_size:
+        N = len(model.midi_notes) - 1
+        train.n_epochs = 1 + train.n_epochs // N
+        train.lr_warmup_epochs = 1 + train.lr_warmup_epochs
+        train.scheduler_patience = 1 + train.scheduler_patience // N
+        train.scheduler_cooldown = 1 + train.scheduler_cooldown // N
+        train.beta_warmup_epochs = 1 + train.beta_warmup_epochs // N
+
+    # Automatic model.synth string update - to summarize this info into 1 Tensorboard string hparam
+    if model.synth == "dexed":
+        if model.dataset_synth_args[0] is not None:  # Algorithms
+            model.synth_args_str = model.synth_args_str.replace("al*", "al" +
+                                                                '.'.join(
+                                                                    [str(alg) for alg in model.dataset_synth_args[0]]))
+        if model.dataset_synth_args[1] is not None:  # Operators
+            model.synth_args_str = model.synth_args_str.replace("_op*", "_op" +
+                                                                ''.join(
+                                                                    [str(op) for op in model.dataset_synth_args[1]]))
+        if model.dataset_labels is not None:  # Labels
+            model.synth_args_str = model.synth_args_str.replace("_lab*", '_' +
+                                                                '_'.join(
+                                                                    [label[0:4] for label in model.dataset_labels]))
+    else:
+        raise NotImplementedError("Unknown synth prefix for model.synth '{}'".format(model.synth))
+
+
+# Call this function again after modifications from the outside of this module
+update_dynamic_config_params()
 

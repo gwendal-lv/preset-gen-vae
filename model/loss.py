@@ -5,24 +5,41 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from nflows.transforms.base import CompositeTransform
+
 from data.preset import PresetIndexesHelper
+import utils.probability
 
 
 class L2Loss:
     """
-    L2 (squared difference) loss, with customizable normalization options.
+    L2 (squared difference) loss, with customizable normalization (averaging) options.
 
     When used to model the reconstruction probability p_theta( x | zK ), normalization has strong
     implications on the p_theta( x | zK ) model itself.
     E.g., for a 1-element batch, the non-normalized L2 loss implies a learned mean, fixed 1/√2 std
     gaussian model for each element of x.
-
-    By normalizing the L2 error (i.e. MSE error), the fixed std is multiplied by √(nb of elements of x)
+    When normalizing the L2 error (i.e. MSE error), the fixed std is multiplied by √(nb of elements of x)
     (e.g. approx *300 for a 250x350 pixels spectrogram)
 
     Normalization over batch dimension should always be performed (monte-carlo log-proba estimation).
     """
-    pass  # TODO
+    def __init__(self, contents_average=False, batch_average=True):
+        """
+
+        :param contents_average: If True, the loss value will be divided by the number of elements of a batch item.
+        :param batch_average: If True, the loss value will be divided by batch size
+        """
+        self.contents_average = contents_average
+        self.batch_average = batch_average
+
+    def __call__(self, inferred, target):
+        loss = torch.sum(torch.square(inferred - target))
+        if self.batch_average:
+            loss = loss / inferred.shape[0]
+        if self.contents_average:
+            loss = loss / inferred[0, :].numel()
+        return loss
 
 
 # TODO Spectral Convergence
@@ -30,7 +47,7 @@ class L2Loss:
 
 class GaussianDkl:
     """ Kullback-Leibler Divergence between independant Gaussian distributions (diagonal
-    covariance matrices). mu 2 and logs(var) 2 are optional and will be resp. zeros and ones if not given.
+    covariance matrices). mu 2 and logs(var) 2 are optional and will be resp. zeros and zeros if not given.
 
     A normalization over the batch dimension will automatically be performed.
     An optional normalization over the channels dimension can also be performed.
@@ -61,13 +78,13 @@ class SynthParamsLoss:
     to this class constructor.
 
     The categorical loss is categorical cross-entropy. """
-    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss, categorical_loss_factor=0.2,
+    def __init__(self, idx_helper: PresetIndexesHelper, normalize_losses: bool, categorical_loss_factor=0.2,
                  prevent_useless_params_loss=True):
         """
 
         :param idx_helper: PresetIndexesHelper instance, created by a PresetDatabase, to convert vst<->learnable params
-        :param numerical_loss: Loss class instance to compute loss on numerical-represented learnable parameters.
-            The given loss function should perform a batch mean reduction.
+        :param normalize_losses: If True, losses will be divided by batch size and number of parameters
+            in a batch element. If False, losses will only be divided by batch size.
         :param categorical_loss_factor: Factor to be applied to the categorical cross-entropy loss, which is
             much greater than the 'corresponding' MSE loss (if the parameter was learned as numerical)
         :param prevent_useless_params_loss: If True, the class will search for useless params (e.g. params which
@@ -75,14 +92,19 @@ class SynthParamsLoss:
             TODO describe overhead here
         """
         self.idx_helper = idx_helper
-        self.numerical_loss = numerical_loss
+        self.normalize_losses = normalize_losses
         self.cat_loss_factor = categorical_loss_factor
         self.prevent_useless_params_loss = prevent_useless_params_loss
+        # Numerical loss criterion
+        if self.normalize_losses:
+            self.numerical_criterion = nn.MSELoss(reduction='mean')
+        else:
+            self.numerical_criterion = L2Loss()
         # Pre-compute indexes lists (to use less CPU). 'num' stands for 'numerical' (not number)
         self.num_indexes = self.idx_helper.get_numerical_learnable_indexes()
         self.cat_indexes = self.idx_helper.get_categorical_learnable_indexes()
 
-    def __call__(self, u_in: torch.Tensor, u_out: torch.Tensor):
+    def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
         """ Categorical parameters must be one-hot encoded. """
         # At first: we search for useless parameters (whose loss should not be back-propagated)
         useless_num_learn_param_indexes, useless_cat_learn_param_indexes = list(), list()
@@ -95,18 +117,18 @@ class SynthParamsLoss:
         num_loss = 0.0  # - - - numerical loss - - -
         if len(self.num_indexes) > 0:
             if self.prevent_useless_params_loss:
-                # TODO apply a 0.0 factor for disabled parameters (e.g. Dexed operator w/ output level 0.0)
+                # apply a 0.0 factor for disabled parameters (e.g. Dexed operator w/ output level 0.0)
                 for row in range(u_in.shape[0]):
                     for num_idx in self.num_indexes:
                         if num_idx in useless_num_learn_param_indexes[row]:
                             u_in[row, num_idx] = 0.0
                             u_out[row, num_idx] = 0.0
-            num_loss = self.numerical_loss(u_in[:, self.num_indexes], u_out[:, self.num_indexes])
+            num_loss = self.numerical_criterion(u_out[:, self.num_indexes], u_in[:, self.num_indexes])
         cat_loss = 0.0  # - - - categorical loss - - -
         if len(self.cat_indexes) > 0:
             # For each categorical output (separate loss computations...)
             for cat_learn_indexes in self.cat_indexes:  # type: list
-                # TODO don't compute cat loss for disabled parameters (e.g. Dexed operator w/ output level 0.0)
+                # don't compute cat loss for disabled parameters (e.g. Dexed operator w/ output level 0.0)
                 rows_to_remove = list()
                 if self.prevent_useless_params_loss:
                     for row in range(batch_size):  # Need to check cat index 0 only
@@ -127,10 +149,13 @@ class SynthParamsLoss:
                 q_odds = u_out[:, cat_learn_indexes]  # contains all q odds
                 if useful_rows is not None:  # Some rows can be discarded from loss computation
                     q_odds = q_odds[useful_rows, :]
-                q_odds = q_odds[target_one_hot]
-                # normalization vs. batch size
+                q_odds = q_odds[target_one_hot]  # Cross-entropy uses only 1 odd per output vector (thanks to softmax)
+                # batch-sum and normalization vs. batch size
                 cat_loss += - torch.sum(torch.log(q_odds)) / (batch_size - len(rows_to_remove))
-            cat_loss = cat_loss / len(self.cat_indexes)  # Normalization vs. number of categorical-learned params
+                # TODO instead of final factor: maybe divide the each cat loss by the one-hot vector length?
+                #    maybe not: cross-entropy always uses only 1 of the odds... (softmax does the job before)
+            if self.normalize_losses:  # Normalization vs. number of categorical-learned params
+                cat_loss = cat_loss / len(self.cat_indexes)
         # losses weighting - Cross-Entropy is usually be much bigger than MSE. num_loss
         return num_loss + cat_loss * self.cat_loss_factor
 
@@ -156,7 +181,7 @@ class QuantizedNumericalParamsLoss:
         self.num_params_count = len(self.idx_helper.num_idx_learned_as_num)\
                                 + len(self.idx_helper.num_idx_learned_as_cat)
 
-    def __call__(self, u_in: torch.Tensor, u_out: torch.Tensor):
+    def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
         """ Returns the loss for numerical VST params only (searched in u_in and u_out).
         Learnable representations can be numerical (in [0.0, 1.0]) or one-hot categorical.
         The type of representation has been stored in self.idx_helper """
@@ -203,7 +228,7 @@ class CategoricalParamsAccuracy:
         self.reduce = reduce
         self.percentage_output = percentage_output
 
-    def __call__(self, u_in: torch.Tensor, u_out: torch.Tensor):
+    def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
         """ Returns accuracy (or accuracies) for all categorical VST params.
         Learnable representations can be numerical (in [0.0, 1.0]) or one-hot categorical.
         The type of representation is stored in self.idx_helper """
@@ -231,5 +256,37 @@ class CategoricalParamsAccuracy:
             return np.asarray([v for _, v in accuracies.items()]).mean()
         else:
             return accuracies
+
+
+class FlowParamsLoss:
+    """
+    Estimates the Dkl between the true distribution of synth params p*(v) and the current p_lambda(v) distribution.
+
+    This requires to invert two flows (the regression and the latent flow) in order to estimate the probability of
+    some v_in target parameters in the q_Z0(z0) distribution (z0 = invT(invU(v)).
+    These invert flows (ideally parallelized) must be provided in the loss constructor
+    """
+    def __init__(self, idx_helper: PresetIndexesHelper, latent_flow_inverse_function, reg_flow_inverse_function):
+        self.idx_helper = idx_helper
+        self.latent_flow_inverse_function = latent_flow_inverse_function
+        self.reg_flow_inverse_function = reg_flow_inverse_function
+
+    def __call__(self, z_0_mu_logvar, v_target):
+        """ Estimate the probability of v_target in the q_Z0(z0) distribution (see details in TODO REF) """
+
+        # FIXME v_target should be "inverse-softmaxed" (because actual output will be softmaxed)
+
+        # TODO apply a factor on categorical params (maybe divide by the size of the one-hot encoded vector?)
+        #    how to do that with this inverse flow transform??????
+
+        # Flows reversing - sum of log abs det of inverse Jacobian is used in the loss
+        z_K, log_abs_det_jac_inverse_U = self.reg_flow_inverse_function(v_target)
+        z_0, log_abs_det_jac_inverse_T = self.latent_flow_inverse_function(z_K)
+        # Evaluate q_Z0(z0) (closed-form gaussian probability)
+        z_0_log_prob = utils.probability.gaussian_log_probability(z_0, z_0_mu_logvar[:, 0, :], z_0_mu_logvar[:, 1, :])
+        # Result is batch-size normalized
+        # TODO loss factor as a ctor arg
+        return - torch.mean(z_0_log_prob + log_abs_det_jac_inverse_T + log_abs_det_jac_inverse_U) / 1000.0
+
 
 

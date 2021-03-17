@@ -22,21 +22,36 @@ def available_architectures():
 
 class SpectrogramEncoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu and logs(var) values"""
-    def __init__(self, architecture, dim_z, spectrogram_input_size, fc_dropout):
+    def __init__(self, architecture, dim_z, input_tensor_size, fc_dropout, output_bn=False):
         super().__init__()
         self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and logs sigma 2)
+        self.spectrogram_channels = input_tensor_size[1]
         self.architecture = architecture
-        self.cnn = SpectrogramCNN(self.architecture)
         self.fc_dropout = fc_dropout
+        # - - - - - 1) Main CNN encoder (applied once per input spectrogram channel) - - - - -
+        # stacked spectrograms: don't add the final 1x1 conv layer
+        self.single_ch_cnn = SpectrogramCNN(self.architecture, append_1x1_conv=False)
+        # - - - - - 2) Features mixer - - - - -
+        assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
+        self.features_mixer_cnn = layer.Conv2D(512*self.spectrogram_channels, 1024, [1, 1], [1, 1], 0, [1, 1],
+                                               activation=nn.LeakyReLU(0.1), name_prefix='enc1x1', batch_norm=None)
+        # - - - - - 3) MLP for extracting properly-sized latent vector - - - - -
         # Automatic CNN output tensor size inference
         with torch.no_grad():
-            dummy_spectrogram = torch.unsqueeze(torch.unsqueeze(torch.zeros(spectrogram_input_size), 0), 0)
-            self.cnn_out_size = self.cnn(dummy_spectrogram).size()
-        # MLP for extracting proper latent vector. No activation - outputs are latent mu/logvar
+            single_element_input_tensor_size = list(input_tensor_size)
+            single_element_input_tensor_size[0] = 1  # single-element batch
+            dummy_spectrogram = torch.zeros(single_element_input_tensor_size)
+            self.cnn_out_size = self._forward_cnns(dummy_spectrogram).size()
         cnn_out_items = self.cnn_out_size[1] * self.cnn_out_size[2] * self.cnn_out_size[3]
+        # No activation - outputs are latent mu/logvar
         if 'wavenet_baseline' in self.architecture\
                 or 'speccnn8l1' in self.architecture:  # (not an MLP...) much is done in the CNN
-            self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 2 * self.dim_z), nn.Dropout(self.fc_dropout))
+            # TODO batch-norm here to compensate for unregularized z0 of a flow-based latent space (replace 0.1 Dkl)
+            #    add corresponding ctor argument (build with bn=True if using flow-based latent space)
+            # TODO remove this dropout?
+            self.mlp = nn.Sequential(nn.Dropout(self.fc_dropout), nn.Linear(cnn_out_items, 2 * self.dim_z))
+            if output_bn:
+                self.mlp.add_module('lat_in_regularization', nn.BatchNorm1d(2 * self.dim_z))
         elif self.architecture == 'flow_synth':
             self.mlp = nn.Sequential(nn.Linear(cnn_out_items, 1024), nn.ReLU(),  # TODO dropouts
                                      nn.Linear(1024, 1024), nn.ReLU(),
@@ -44,9 +59,16 @@ class SpectrogramEncoder(nn.Module):
         else:
             raise NotImplementedError("Architecture '{}' not available".format(self.architecture))
 
-    def forward(self, x_spectrogram):
-        n_minibatch = x_spectrogram.size()[0]
-        cnn_out = self.cnn(x_spectrogram).view(n_minibatch, -1)  # 2nd dim automatically inferred
+    def _forward_cnns(self, x_spectrograms):
+        # apply main cnn multiple times
+        single_channel_cnn_out = [self.single_ch_cnn(torch.unsqueeze(x_spectrograms[:, ch, :, :], dim=1))
+                                  for ch in range(self.spectrogram_channels)]
+        # Then mix features from different input channels - and flatten the result
+        return self.features_mixer_cnn(torch.cat(single_channel_cnn_out, dim=1))
+
+    def forward(self, x_spectrograms):
+        n_minibatch = x_spectrograms.size()[0]
+        cnn_out = self._forward_cnns(x_spectrograms).view(n_minibatch, -1)  # 2nd dim automatically inferred
         # print("Forward CNN out size = {}".format(cnn_out.size()))
         z_mu_logvar = self.mlp(cnn_out)
         # Last dim contains a latent proba distribution value, last-1 dim is 2 (to retrieve mu or logs sigma2)
@@ -58,11 +80,13 @@ class SpectrogramCNN(nn.Module):
 
     # TODO Option to enable res skip connections
     # TODO Option to choose activation function
-    def __init__(self, architecture):
+    def __init__(self, architecture, append_1x1_conv=True):
         """ Automatically defines an autoencoder given the specified architecture
         """
         super().__init__()
         self.architecture = architecture
+        if not append_1x1_conv:
+            assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
 
         if self.architecture == 'wavenet_baseline'\
            or self.architecture == 'wavenet_baseline_lighter':  # this encoder is quite light already
@@ -189,10 +213,11 @@ class SpectrogramCNN(nn.Module):
                                         layer.Conv2D(128, 256, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc6'),
                                         layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
-                                                     activation=act(act_p), name_prefix='enc7'),
-                                        layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
-                                                     activation=act(act_p), name_prefix='enc8'),
+                                                     activation=act(act_p), name_prefix='enc7')
                                         )
+            if append_1x1_conv:
+                self.enc_nn.add_module('1x1conv', layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
+                                                               activation=act(act_p), name_prefix='enc8'))
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
