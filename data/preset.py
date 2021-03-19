@@ -17,6 +17,7 @@ import torch.nn.functional
 class _Synth(Enum):
     GENERIC = 0  # Undefined synth - numerical params only, all are learnable
     DEXED = 1
+    DIVA = 2
 
 
 class PresetIndexesHelper:
@@ -54,6 +55,8 @@ class PresetIndexesHelper:
             self.synth_name = dataset.synth_name
             if self.synth_name.lower() == "dexed":
                 self._synth = _Synth.DEXED
+            if self.synth_name.lower() == "diva":
+                self._synth = _Synth.DIVA
             self._param_names = dataset.preset_param_names
             self._vst_param_learnable_model = dataset.vst_param_learnable_model
             self._param_cardinals = [dataset.get_preset_param_cardinality(vst_idx, learnable_representation=True)
@@ -76,6 +79,7 @@ class PresetIndexesHelper:
                     self._full_to_learnable.append(learnable_indexes)
                 else:
                     raise ValueError("Unknown param learning model '{}'".format(dataset.vst_param_learnable_model[vst_idx]))
+
             self._learnable_preset_size = current_learnable_idx
             # Final inits
             self._numerical_vst_params = dataset.numerical_vst_params
@@ -84,6 +88,7 @@ class PresetIndexesHelper:
         # Dict keys are VST 'full-preset' indexes
         self._cat_idx_learned_as_num = dict()  # Dict of integer indexes
         self._cat_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
+
         for vst_idx in self.categorical_vst_params:
             learnable_model = self.vst_param_learnable_model[vst_idx]
             if learnable_model is not None:
@@ -97,7 +102,7 @@ class PresetIndexesHelper:
                     raise ValueError("Unknown learnable representation '{}'".format(learnable_model))
         self._num_idx_learned_as_num = dict()  # Dict of integer indexes
         self._num_idx_learned_as_cat = dict()  # Dict of lists of integer indexes
-        for vst_idx in self.numerical_vst_params:
+        for vst_idx in self.numerical_vst_params :
             learnable_model = self.vst_param_learnable_model[vst_idx]
             if learnable_model is not None:
                 if learnable_model == 'num':  # 1 learnable index

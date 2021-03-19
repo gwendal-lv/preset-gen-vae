@@ -33,7 +33,6 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
                  ):
         """
         Abstract Base Class for any synthesizer presets dataset.
-
         :param note_duration: Tuple: MIDI Note (on_duration, off_duration) in seconds
         :param n_fft: Width of the FFT window for spectrogram computation
         :param fft_hop: STFT hop length (in samples)
@@ -187,7 +186,6 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     def get_preset_param_cardinality(self, idx, learnable_representation=True):
         """ Returns the cardinality i.e. the number of possible different values of all parameters.
         A -1 cardinal indicates a continuous parameter.
-
         :param idx: The full-preset (VSTi representation) index
         :param learnable_representation: Some parameters can have a reduced cardinality for learning
         (and their learnable representation is scaled consequently). """
@@ -337,7 +335,6 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         """ Compute min,max,mean,std on all presets previously rendered as wav files.
         Per-preset results are stored into a .csv file
         and dataset-wide averaged results are stored into a .json file
-
         This functions must be re-run when spectrogram parameters are changed. """
         t_start = datetime.now()
         # MKL and/or PyTorch do not use hyper-threading, and it gives better results... don't use multi-proc here

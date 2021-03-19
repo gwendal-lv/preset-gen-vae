@@ -6,6 +6,7 @@
 
 # TODO add these to the repo?
 dexed_presets/*
+diva_presets/*
 
 # temp backup sqlite DBs
 *.backup
