@@ -3,8 +3,6 @@ Implementation of the DivaDataset, based on the PresetBased abstract class.
 TODO doc
 """
 
-from abstractbasedataset import PresetDataset
-from synth import diva
 import numpy as np
 import pathlib
 import torch
@@ -14,10 +12,13 @@ import json
 from multiprocessing import *
 import multiprocessing
 from datetime import datetime
+
+from data import abstractbasedataset
+from synth import diva
 from data.preset import PresetsParams, PresetIndexesHelper
 
 
-class DivaDataset(PresetDataset):
+class DivaDataset(abstractbasedataset.PresetDataset):
     def __init__(self, note_duration = 3.0, n_fft = 512, fft_hop = 512,
                  midi_note=60, midi_velocity=100, n_mel_bins=-1,
                  multi_note_spectrogram=False,
@@ -217,11 +218,13 @@ class DivaDataset(PresetDataset):
         return PresetsParams(dataset=self, full_presets=tensor_2d, learnable_presets=None)
 
     def multi_run_wrapper(self, args):
+        # FIXME use explicit method name
         return self.generate_wav_files_multi_process(*args)
+
 
 if __name__ == "__main__":
     # ============== DATA RE-GENERATION - FROM config.py ==================
-    regenerate_wav = False  # quite long (15min, full dataset, 1 midi note)
+    regenerate_wav = True  # quite long (15min, full dataset, 1 midi note)
     regenerate_wav_multi_process = False
     regenerate_spectrograms_stats = False  # approx 3 min
 
