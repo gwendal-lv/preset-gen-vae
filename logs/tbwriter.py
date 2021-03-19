@@ -50,6 +50,8 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['fcdrop'] = self.train_config.fc_dropout
         self.hyper_params['synth'] = self.model_config.synth
         self.hyper_params['syntargs'] = self.model_config.synth_args_str
+        self.hyper_params['nmidi'] = '{}{}'.format(len(self.model_config.midi_notes),
+                                                   ("stack" if model_config.stack_spectrograms else "inde"))
         self.hyper_params['catmodel'] = self.model_config.synth_vst_params_learned_as_categorical
         self.hyper_params['normloss'] = self.train_config.normalize_losses
         # Latent space hparams

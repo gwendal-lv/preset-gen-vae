@@ -42,9 +42,6 @@ class L2Loss:
         return loss
 
 
-# TODO Spectral Convergence
-
-
 class GaussianDkl:
     """ Kullback-Leibler Divergence between independant Gaussian distributions (diagonal
     covariance matrices). mu 2 and logs(var) 2 are optional and will be resp. zeros and zeros if not given.

@@ -29,6 +29,8 @@ def get_dataset(model_config, train_config):
         raise NotImplementedError("No dataset available for '{}': unrecognized synth.".format(model_config.synth))
     if train_config.verbosity >= 2:
         print(full_dataset.preset_indexes_helper)
+    elif train_config.verbosity >= 1:
+        print(full_dataset.preset_indexes_helper.short_description)
     # config.py direct dirty modifications - number of learnable params depends on the synth and dataset arguments
     model_config.synth_params_count = full_dataset.learnable_params_count
     model_config.learnable_params_tensor_length = full_dataset.learnable_params_tensor_length

@@ -28,12 +28,55 @@ Please write two lists of dicts, such that:
 # automatically train all cross-validation folds?
 train_all_k_folds = True
 
+
 # Run 0
-model_config_mods.append({'midi_notes': ((60, 85), )})
-train_config_mods.append({'n_epochs': 3, 'main_cuda_device_idx': 1})
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '20_dex3op_numonly_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 320,
+                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
+                                                 [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': None})
+train_config_mods.append({'main_cuda_device_idx': 1})
 # Run 1
-#model_config_mods.append({'run_name': "84_data_15k"})
-#train_config_mods.append({})
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '21_dex6op_numonly_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 590,
+                          'synth_vst_params_learned_as_categorical': None})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 2
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '22_dex3op_vstcat_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 320,
+                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
+                                                 [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 3
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '23_dex6op_vstcat_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 590,
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 4
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '24_dex3op_all<=32_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 320,
+                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
+                                                 [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': 'all<=32'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 5
+model_config_mods.append({'name': 'MLPVAE',
+                          'run_name': '25_dex6op_all<=32_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 590,
+                          'synth_vst_params_learned_as_categorical': 'all<=32'})
+train_config_mods.append({'main_cuda_device_idx': 1})
 
 
 

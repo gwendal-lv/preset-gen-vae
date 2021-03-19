@@ -3,6 +3,8 @@
 import os
 import pathlib
 from abc import ABC, abstractmethod  # Abstract Base Class
+from typing import Sequence
+
 import pandas as pd
 import json
 from datetime import datetime
@@ -156,6 +158,11 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         return len(self.valid_preset_UIDs)
 
     @property
+    def default_midi_note(self):
+        """ Default MIDI pitch and velocity, e.g. for audio renders evaluation, labelling, ... """
+        return 60, 85
+
+    @property
     def midi_notes_per_preset(self):
         """ Number of available midi notes (different pitch and/or velocity) for a given preset. """
         return len(self.midi_notes)
@@ -265,6 +272,15 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
     @property
     def labels_count(self):
         return len(self.available_labels_name)
+
+    @abstractmethod
+    def _render_audio(self, preset_params: Sequence, midi_note: int, midi_velocity: int):
+        """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate.
+
+        :param preset_params: List of preset VST parameters, constrained (constraints from this class ctor
+            args must have been applied before passing preset_params).
+        """
+        pass
 
     @abstractmethod
     def get_wav_file(self, preset_UID, midi_note, midi_velocity):

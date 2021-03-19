@@ -237,15 +237,10 @@ class DexedDataset(abstractbasedataset.PresetDataset):
 
     @property
     def available_labels_names(self):
-        """ Returns a tuple of string description of labels. """
+        """ Returns a tuple of string descriptions of labels. """
         return dexed.PresetDatabase.get_available_labels()
 
     def _render_audio(self, preset_params: Iterable, midi_note, midi_velocity):
-        """ Renders audio on-the-fly and returns the computed audio waveform and sampling rate.
-
-        :param preset_params: List of preset VST parameters, constrained (constraints from this class ctor
-            args must have been applied before passing preset_params).
-        """
         # reload the VST to prevent hanging notes/sounds
         dexed_renderer = dexed.Dexed(midi_note_duration_s=self.note_duration[0],
                                      render_duration_s=self.note_duration[0] + self.note_duration[1])

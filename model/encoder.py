@@ -27,13 +27,15 @@ class SpectrogramEncoder(nn.Module):
         self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and logs sigma 2)
         self.spectrogram_channels = input_tensor_size[1]
         self.architecture = architecture
+        self.mixer_1x1conv_ch = 2048
         self.fc_dropout = fc_dropout
         # - - - - - 1) Main CNN encoder (applied once per input spectrogram channel) - - - - -
         # stacked spectrograms: don't add the final 1x1 conv layer
         self.single_ch_cnn = SpectrogramCNN(self.architecture, append_1x1_conv=False)
         # - - - - - 2) Features mixer - - - - -
         assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
-        self.features_mixer_cnn = layer.Conv2D(512*self.spectrogram_channels, 1024, [1, 1], [1, 1], 0, [1, 1],
+        self.features_mixer_cnn = layer.Conv2D(512*self.spectrogram_channels, self.mixer_1x1conv_ch,
+                                               [1, 1], [1, 1], 0, [1, 1],
                                                activation=nn.LeakyReLU(0.1), name_prefix='enc1x1', batch_norm=None)
         # - - - - - 3) MLP for extracting properly-sized latent vector - - - - -
         # Automatic CNN output tensor size inference

@@ -2,6 +2,7 @@
 Allows easy modification of all configuration parameters required to define,
 train or evaluate a model.
 This script is not intended to be run, it only describes parameters.
+However, some dynamic hyper-parameters are properly set when this module is imported.
 
 This configuration is used when running train.py as main.
 When running train_queue.py, configuration changes are relative to this config.py file.
@@ -16,9 +17,9 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 
 model = _Config()
-model.name = "ExtVAE2"
-model.run_name = '95_all_dexed_ops'  # run: different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = True  # If True, a previous run with identical name will be erased before new training
+model.name = "ExtVAE3"
+model.run_name = '00'  # run: different hyperparams, optimizer, etc... for a given model
+model.allow_erase_run = False  # If True, a previous run with identical name will be erased before training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
 # Possible values: 'flow_realnvp_4l180', 'mlp_3l1024', ... (configurable numbers of layers and neurons)
@@ -30,9 +31,9 @@ model.stft_args = (1024, 256)  # fft size and hop size
 model.mel_bins = 257  # -1 disables Mel-scale spectrogram. Try: 257, 513, ...
 model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO implement
 # Tuple of (pitch, velocity) tuples. Using only 1 midi note is fine.
-# model.midi_notes = ((60, 85), )  # Reference note
-model.midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
-model.stack_spectrograms = True  # If True, dataset will feed multi-channel spectrograms to the encoder
+model.midi_notes = ((60, 85), )  # Reference note
+# model.midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
+model.stack_spectrograms = False  # If True, dataset will feed multi-channel spectrograms to the encoder
 # If True, each preset is presented several times per epoch (nb of train epochs must be reduced) such that the
 # dataset size is artificially increased (6x bigger with 6 MIDI notes) -> warmup and patience epochs must be scaled
 model.increased_dataset_size = None  # See update_dynamic_config_params()
@@ -123,7 +124,7 @@ train.scheduler_threshold = 1e-4
 # Training considered "dead" when dynamic LR reaches this value
 train.early_stop_lr_threshold = None  # See update_dynamic_config_params()
 
-train.verbosity = 2  # 0: no console output --> 3: fully-detailed per-batch console output
+train.verbosity = 1  # 0: no console output --> 3: fully-detailed per-batch console output
 train.init_security_pause = 0.0  # Short pause before erasing an existing run
 # Number of logged audio and spectrograms for a given epoch
 train.logged_samples_count = 4  # See update_dynamic_config_params()
@@ -163,7 +164,7 @@ def update_dynamic_config_params():
     if model.increased_dataset_size:
         N = len(model.midi_notes) - 1
         train.n_epochs = 1 + train.n_epochs // N
-        train.lr_warmup_epochs = 1 + train.lr_warmup_epochs
+        train.lr_warmup_epochs = 1 + train.lr_warmup_epochs // N
         train.scheduler_patience = 1 + train.scheduler_patience // N
         train.scheduler_cooldown = 1 + train.scheduler_cooldown // N
         train.beta_warmup_epochs = 1 + train.beta_warmup_epochs // N

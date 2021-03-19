@@ -6,8 +6,7 @@ Classes to store and transform batches of synth presets. Some functionalities ar
 """
 
 from enum import Enum
-from typing import Optional
-from collections.abc import Iterable
+from typing import Optional, Iterable, Sequence
 import numpy as np
 
 import torch
@@ -112,12 +111,25 @@ class PresetIndexesHelper:
 
     def __str__(self):
         learnable_count = sum([(0 if learn_model is None else 1) for learn_model in self._vst_param_learnable_model])
-        params_str = "[PresetIndexesHelper] {} learnable parameters: ".format(learnable_count)
+        params_str = "[PresetIndexesHelper] {} learnable VSTi parameters: ".format(learnable_count)
         for i, learn_model in enumerate(self._vst_param_learnable_model):
             if learn_model is not None:
                 params_str += "    - {}.{}: {} ({})".format(i, self._param_names[i], learn_model,
                                                             self._full_to_learnable[i])
         return params_str
+
+    @property
+    def short_description(self):
+        vsti_learnable_count = sum([(0 if learn_model is None else 1)
+                                    for learn_model in self._vst_param_learnable_model])
+        tensor_learnable_size = 0
+        for learnable_indexes in self._full_to_learnable:
+            if isinstance(learnable_indexes, Sequence):
+                tensor_learnable_size += len(learnable_indexes)
+            elif isinstance(learnable_indexes, int):
+                tensor_learnable_size += 1
+        return "[PresetIndexesHelper] {} learnable VSTi parameters, " \
+               "learnable tensor representation size: {}".format(vsti_learnable_count, tensor_learnable_size)
 
     # - - - - - Properties about VSTi (full-preset) parameters - - - - -
     @property

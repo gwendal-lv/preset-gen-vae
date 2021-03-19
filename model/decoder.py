@@ -18,6 +18,7 @@ class SpectrogramDecoder(nn.Module):
         self.dim_z = dim_z  # Latent-vector size
         self.architecture = architecture
         self.cnn_input_shape = None  # shape not including batch size
+        self.mixer_1x1conv_ch = 2048
         self.fc_dropout = fc_dropout
 
         if 'speccnn8l1' not in self.architecture:
@@ -45,9 +46,9 @@ class SpectrogramDecoder(nn.Module):
         elif 'speccnn8l1' in self.architecture:
             if self.spectrogram_input_size == (257, 347):
                 if self.architecture == 'speccnn8l1_3':
-                    self.cnn_input_shape = (1024, 3, 3)
+                    self.cnn_input_shape = (self.mixer_1x1conv_ch, 3, 3)
                 else:
-                    self.cnn_input_shape = (1024, 3, 4)
+                    self.cnn_input_shape = (self.mixer_1x1conv_ch, 3, 4)
                 # No ReLU (encoder-symmetry) (and leads to very bad generalization, but don't know why)
                 self.mlp = nn.Sequential(nn.Linear(self.dim_z, int(np.prod(self.cnn_input_shape))),
                                          nn.Dropout(self.fc_dropout))
@@ -57,7 +58,8 @@ class SpectrogramDecoder(nn.Module):
             raise NotImplementedError("Architecture '{}' not available".format(self.architecture))
 
         # - - - - - 2) Features "un-mixer" - - - - -
-        self.features_unmixer_cnn = layer.TConv2D(1024, self.spectrogram_channels*512, [1, 1], [1, 1], 0,
+        self.features_unmixer_cnn = layer.TConv2D(self.mixer_1x1conv_ch, self.spectrogram_channels*512,
+                                                  [1, 1], [1, 1], 0,
                                                   activation=nn.LeakyReLU(0.1), name_prefix='dec1')
 
         # - - - - - 3) Main CNN decoder (applied once per spectrogram channel) - - - - -
@@ -200,6 +202,7 @@ class SpectrogramCNN(nn.Module):
                                         output_activation
                                         )
             if append_1x1_conv:  # 1x1 "un-mixing" conv inserted as first conv layer
+                assert False  # FIXME 1024ch should not be constant
                 self.dec_nn = nn.Sequential(layer.TConv2D(1024, 512, [1 ,1], [1 ,1], 0,
                                                           activation=act(act_p), name_prefix='dec1'),
                                             self.dec_nn)

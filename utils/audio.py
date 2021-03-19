@@ -3,6 +3,8 @@ Audio utils (spectrograms, G&L phase reconstruction, ...)
 """
 
 import warnings
+from typing import Iterable, Sequence
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -16,9 +18,10 @@ class Spectrogram:
     """ Class for dB spectrogram computation from a raw audio waveform.
     The min spectrogram value must be provided.
     The default windowing function is Hann. """
-    def __init__(self, n_fft, fft_hop, min_dB, dynamic_range_dB=None):
+    def __init__(self, n_fft, fft_hop, min_dB, dynamic_range_dB=None, log_scale=True):
         self.n_fft = n_fft
         self.fft_hop = fft_hop
+        self.log_scale = log_scale
         self.min_dB = min_dB
         self.dynamic_range_dB = dynamic_range_dB
         self.window = torch.hann_window(self.n_fft, periodic=False)
@@ -38,7 +41,10 @@ class Spectrogram:
         spectrogram = self.get_stft(x_wav).abs()
         # normalization of spectrogram module vs. Hann window weight
         spectrogram = spectrogram / self.spectrogram_norm_factor
-        return self.linear_to_log_scale(spectrogram)
+        if self.log_scale:
+            return self.linear_to_log_scale(spectrogram)
+        else:
+            return spectrogram
 
     def linear_to_log_scale(self, spectrogram):
         spectrogram = torch.maximum(spectrogram, torch.ones(spectrogram.size()) * 10 ** (self.min_dB / 20.0))
@@ -63,7 +69,7 @@ class Spectrogram:
 
 class MelSpectrogram(Spectrogram):
     def __init__(self, n_fft, fft_hop, min_dB, n_mel_bins, Fs):
-        super().__init__(n_fft, fft_hop, min_dB)
+        super().__init__(n_fft, fft_hop, min_dB, log_scale=True)
         # TODO add fmin, fmax arguments
         self.Fs = Fs
         self.n_mel_bins = n_mel_bins
@@ -81,6 +87,72 @@ class MelSpectrogram(Spectrogram):
         """ Inverses the Mel-filters and and log-amplitude transformations applied to a spectrogram. """
         spectrogram = self.log_to_linear_scale(mel_spectrogram)
         return librosa.feature.inverse.mel_to_stft(spectrogram.numpy(), n_fft=self.n_fft, power=1.0, norm=None)
+
+
+class SimilarityEvaluator:
+    """ Class for evaluating audio similarity between audio samples through various criteria. """
+    def __init__(self, x_wav: Sequence[Iterable], n_fft=1024, fft_hop=256, sr=22050, n_mfcc=13):
+        """
+
+        :param x_wav: List or Tuple which contains the 2 audio signals (arrays) to be compared.
+        :param n_fft:
+        :param fft_hop:
+        :param sr:
+        :param n_mfcc:
+        """
+        assert len(x_wav) == 2  # This class requires exactly 2 input audio signals
+        self.x_wav = x_wav
+        self.n_fft = n_fft
+        self.fft_hop = fft_hop
+        self.sr = sr
+        self.n_mfcc = n_mfcc
+        # Pre-compute STFT (used in mae log and spectral convergence)
+        self.stft = [np.abs(librosa.stft(x, self.n_fft, self.fft_hop)) for x in self.x_wav]
+
+    def get_mae_log_stft(self):
+        """ Returns the Mean Absolute Error on log(|STFT|) spectrograms of input sounds, and the two spectrograms
+        themselves (e.g. for plotting them later). """
+        eps = 1e-4  # -80dB  (un-normalized stfts)
+        log_stft = [np.maximum(s, eps) for s in self.stft]
+        log_stft = [np.log10(s) for s in log_stft]
+        mae = np.abs(log_stft[1] - log_stft[0])
+        return mae.mean(), log_stft
+
+    def display_stft(self, s, log_scale=True):
+        """ Displays given spectrograms s (List of two |STFT|) """
+        fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+        im = librosa.display.specshow(s[0], shading='flat', ax=axes[0], cmap='magma')
+        im = librosa.display.specshow(s[1], shading='flat', ax=axes[1], cmap='magma')
+        if log_scale:
+            axes[0].set(title='Reference $\log_{10} |STFT|$')
+        else:
+            axes[0].set(title='Reference $|STFT|$')
+        axes[1].set(title='Inferred synth parameters')
+        fig.tight_layout()
+        return fig, axes
+
+    def get_spectral_convergence(self):
+        """ Returns the Spectral Convergence of input sounds, and the two linear-scale spectrograms
+            used to compute SC (e.g. for plotting them later). SC: see https://arxiv.org/abs/1808.06719 """
+        # Frobenius norm is actually the default numpy matrix norm
+        sc = np.linalg.norm(self.stft[0] - self.stft[1], ord='fro') / np.linalg.norm(self.stft[0], ord='fro')
+        return sc, self.stft
+
+    def get_mae_mfcc(self):
+        """ Returns the Mean Absolute Error on MFCCs. Number of """
+        mfcc = [librosa.feature.mfcc(x, sr=self.sr, n_mfcc=self.n_mfcc) for x in self.x_wav]
+        return np.abs(mfcc[0] - mfcc[1]).mean(), mfcc
+
+    def display_mfcc(self, mfcc):
+        fig, axes = plt.subplots(1, 2, figsize=(6, 3))
+        im = librosa.display.specshow(mfcc[0], shading='flat', ax=axes[0], cmap='viridis')
+        im = librosa.display.specshow(mfcc[1], shading='flat', ax=axes[1], cmap='viridis')
+        axes[0].set(title='{}-bands MFCCs'.format(self.n_mfcc))
+        axes[1].set(title='Inferred synth parameters')
+        fig.tight_layout()
+        return fig, axes
+
+
 
 
 class SimpleSampleLabeler:

@@ -8,6 +8,20 @@ class _Config(object):
     pass
 
 
+class EvalConfig:
+    def __init__(self):
+        self.start_datetime = ''
+        self.models_names = ['']
+        self.override_previous_eval = False
+        self.device = ''
+        self.verbosity = 0
+        self.dataset = ''
+        self.k_folds_count = 0
+        self.minibatch_size = 0
+        self.load_from_archives = False
+        self.multiprocess_cores_ratio = 0.5
+
+
 class LoadedRunConfig:
     def __init__(self, **entries):
         self.__dict__.update(entries)

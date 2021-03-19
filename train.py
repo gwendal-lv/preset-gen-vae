@@ -320,7 +320,6 @@ def train_config():
 
 
     # ========== Logger final stats ==========
-    # TODO pickle all final hparams and metrics?
     logger.on_training_finished()
 
 
