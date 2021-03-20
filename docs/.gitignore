@@ -1,3 +1,5 @@
 
 # Only exported graphs will be LFS-commited
 *.graffle
+*.pages
+

@@ -235,7 +235,7 @@ class Diva:
             11: 27,
             12: 27,
             13: 2,
-            14: 49,
+            14: 49,  # Transpose: 49 possible values (from -24 semitones to +24 semitones)
             16: 3,
             17: 2,
             18: 4,
@@ -348,28 +348,171 @@ class Diva:
 
     @staticmethod
     def get_numerical_params_indexes():
-        indexes = [0, 3, 8, 9, 10, 15, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 43, 44,
-                   45, 46, 47, 48, 54, 58, 59, 61, 62, 64, 68, 69, 71, 72, 74, 75, 76, 86, 87, 88, 89, 90, 91, 92, 93,
+        indexes = [0, 3, 8, 9, 10,
+                   11, 12,  # +/- Pitch Bend range
+                   14,  # transpose
+                   15, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+                   33, 34, 35, 36, 37, 43,  # env 1: attack, decay, sustain, release, velocity, key follow
+                   44, 45, 46, 47, 48, 54,  # env 2: idem
+                   58, 59, 61, 62, 64,  # LFO 1 phase, delay, depthmod depth, rate, freqmod depth
+                   68, 69, 71, 72, 74,  # LFO 2: idem
+                   75, 76, 86, 87, 88, 89, 90, 91, 92, 93,
                    94, 96, 97, 98, 99, 104, 106, 108, 110, 122, 131, 132, 134, 136, 138, 140, 141, 143, 145, 148, 149,
                    151, 153, 154, 155, 160, 162, 164, 166, 167, 168, 171, 173, 175, 176, 177, 180, 181, 182, 184, 185,
                    186, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206,
                    208, 209, 210, 211, 212, 213, 214, 215, 219, 220, 221, 223, 224, 225, 227, 228, 229, 230, 231, 232,
                    233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 247, 248, 249, 250, 251, 252, 253,
-                   254, 256, 258, 264, 265, 266, 267, 269, 274, 275, 276, 277]
+                   254,
+                   256, 258,  # clock multiply and swing
+                   264, 265, 266, 267, 269,
+                   274, 275, 276, 277  # phasers center and depth (lonely values at the end)
+                   ]
         return indexes
 
     @staticmethod
     def get_categorical_params_indexes():
-        indexes = [1, 2, 4, 5, 6, 7, 11, 12, 13, 14, 16, 17, 18, 19, 38, 39, 40, 41, 42, 49, 50, 51, 52, 53, 55, 56, 57,
-                   60, 63, 65, 66, 67, 70, 73, 77, 78, 79, 80, 81, 82, 83, 84, 85, 95, 100, 101, 102, 103, 105, 107,
+        indexes = [1, 2, 4, 5, 6, 7, 13, 16, 17, 18, 19,
+                   38, 39, 40, 41, 42,  # env 1 model, trigger, digit. quantize, digit. curve, release on/off switch
+                   49, 50, 51, 52, 53,  # env 2: idem
+                   55, 56, 57, 60, 63,  # LFO 1 sync, restart, waveform, depthmodsrc, fredmodsrc
+                   65, 66, 67, 70, 73,  # LFO 2: idem
+                   77, 78, 79, 80, 81, 82, 83, 84, 85, 95, 100, 101, 102, 103, 105, 107,
                    109, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 123, 124, 125, 126, 127, 128, 129,
                    130, 133, 135, 137, 139, 142, 144, 146, 147, 150, 152, 156, 157, 158, 159, 161, 163, 165, 169,
-                   170, 172, 174, 178, 179, 183, 187, 207, 216, 217, 218, 222, 226, 246, 255, 257, 259, 260, 261,
-                   262, 263, 268, 270, 271, 272, 273, 278, 279, 280]
+                   170, 172, 174, 178, 179, 183, 187, 207, 216, 217, 218, 222, 226, 246, 255,
+                   257, 259, 260, 261, 262, 263,  # clock and arp
+                   268, 270,
+                   271,  # arp order
+                   272, 273,  # LFOs polarity
+                   278, 279, 280]
         return indexes
+
+    @staticmethod
+    def get_UI_and_CPU_params_indexes():
+        """ Returns a tuple of indexes of VSTi parameters related to the User Interface or to CPU usage
+        (multi-threading, audio quality, ...). They must be excluded from learning. """
+        return (3,  # LED colour
+                176, 177,  # Oscilloscope Frequency and Scale
+                17,  # Multi-core
+                18, 19,  # Accuracy (real-time), Offline Accuracy (rendering quality)
+                )
+
+    @staticmethod
+    def get_transpose_params_indexes():
+        return (13, 14, 15)  # micro-tuning on/off, Transpose, Fine Tune Cents. Should not be learned
+
+    @staticmethod
+    def get_panning_params_indexes():
+        return (167, 172, 173)  # pan, pan mod src, pan mod depth. Should not be learned
+
+    @staticmethod
+    def get_FX_params_indexes():
+        """ Returns a list of indexes of VSTi parameters related to audio effects e.g. phaser, chorus, reverb, ... """
+        indexes = [1, 2]  # activate fx1, fx2
+        indexes += range(178, 255+1)  # from FX1:Module to Rtary2:Controller
+        indexes += [274, 275, 276, 277]  # Phaser depth and center are at the end of the list
+        return indexes
+
+    @staticmethod
+    def get_clock_arp_params_indexes():
+        """ Returns a list of VSTi parameter indexes related the clock source and the arpeggiator. """
+        return list(range(256, 263+1)) + [271]
+
+    @staticmethod
+    def get_modulation_params_indexes():
+        """ Returns a list of VSTi parameters related to MIDI modulation or internal 'MOD' sources.
+        TODO more precise doc """
+        midi_mod_indexes = [11, 12]  # +/- pitch bend
+        # TODO all modulation sources for enveloppes, filters, ...
+        internal_mod_indexes = []
+        return midi_mod_indexes + internal_mod_indexes
+
+    @staticmethod
+    def get_polyphonic_params_indexes():
+        """ Returns a tuple of indexes of VSTi parameters related to polyphonic MIDI input
+        (chords), e.g. glide, polyphony on/off, ... Also: multi-voice options (the voice matrix is not
+        automatable). """
+        return (  # - - - params linked to the non-automatable polyphonic detune/voicemod matrix - - -
+                4, 5, 6,  # VCC Voices, VCC Voice Stack, VCC (Voices) Mode
+                16,  # note priority
+                20,  # OPT: TuneSlop (matrix detune amount)
+                21, 22, 23, 24,  # the four "variance" params on the right of the matrix
+                25, 26, 27, 28, 29, 30, 31, 32,  # OPT: V1MOD.... V8MOD (voice map modulation)
+                # - - - glide - - -
+                7, 8, 9, 10
+                )
+
+    @staticmethod
+    def get_single_use_osc_filter_env_params_indexes():
+        """
+        Returns a list of VSTi parameters which are not used (shared) by all types of oscillators, filters
+        or envelopes. E.g. :
+        - the quantize and curve params of a digital filter
+
+        These parameters should not be learned
+        """
+        return (39, 50,  # "trigger" params of envelopes. Always zero, not mentioned in the doc, does not appear in GUI
+                40, 41, 51, 52,  # digital envelopes (1 and 2) quantize, curve
+                # TODO finish, and manage 'isolated' params such as 3rd osc params, ... or use a dynamic loss
+                )
+
+    @staticmethod
+    def get_possible_default_osc_filter_env_param_indexes():
+        """ Returns a list of VSTi parameters indexes which can be set to their default value (not learned)
+        without limit sonic possibilities too much. E.g. LFO 'sync' (=base clock) can be set to 1.0s because the
+         rate control allows to play on the actual LFO speed. """
+        return (55, 65,  # LFO 'sync' = base clock
+                56, 66,  # LFO restart (very often 'gate', impossible to guess by playing a single midi note)
+                60, 61, 63, 64, 70, 71, 73, 74  # mod (depth and rate of the LFO itself (2 levels of modulations...)
+                )
+
+    @staticmethod
+    def get_default_param_values():
+        """ Returns a list of default values of all VSTi parameters.
+        A -0.1 value indicates to a 'doesn't matter' default value and will be clamped
+        to 0.0 by RenderMan and/or Diva. """
+        v = -0.1 * np.ones((281, ))
+        v[0] = 0.5  # MAIN OUTPUT
+        v[1], v[2] = 0.0, 0.0  # fx1, fx2 are OFF (no need to set default wet/dry params)
+        v[4], v[5] = 0.0, 0.0  # VCC voices = 2, voice stack = 1
+        v[6] = 0.25  # VCC Mode = mono
+        v[7], v[8], v[9], v[10] = 0.0, 0.0, 0.5, 0.0  # glidemode=time, Glide, glide2, glide range
+        v[13], v[14], v[15] = 0.0, 0.5, 0.5  # TUNING MODE (NO microtuning) TRANSPOSE, FINE TUNE CENTS
+        v[17] = 0.0  # Multicore: Off
+        v[18] = 1.0/3.0  # Accuracy (CPU usage): 'fast'
+        v[19] = 0.0  # Offline rendering Accuracy: 'same'
+        v[20:(24+1)] = 0.0  # voices matrix detune amount + 4 variance params
+        v[25:(32+1)] = 0.5  # voice map modulation (V1MOD...V8MOD)
+        v[39], v[50] = 0.0, 0.0  # 'trigger' env1,2 (always zero in the whole dataset)
+        v[40], v[41], v[51], v[52] = 0.0, 0.0, 0.0, 0.0  # env 1,2 quantize and curve (digital envelope only)
+        v[55], v[65] = 1.0/26.0, 1.0/26.0  # LFO 1-2 sync (base clock) 1.0s
+        v[56], v[66] = 1.0/3.0, 1.0/3.0  # LFO 1-2 restart: gate
+        v[61], v[71] = 0.0, 0.0  # LFO 1-2 depth mod: depth
+        v[64], v[74] = 0.5, 0.5  # LFO 1-2 freq mod: depth (+0.0 rate change)
+        # TODO default for all deactivated modulation sources (that's a lot a params)
+        #    default assign LFO1 and LFO2 to their most frequent destination? (.e.g lfo2 to filter cutoff, ...)
+        v[167], v[172], v[173] = 0.5, 0.0, 0.5  # pan, pan mod src, pan mod depth
+        v[263] = 0.0  # arp OFF
+        return v
 
 
 if __name__ == "__main__":
+    # Tests on learnable/non-learnable lists of param indexes
+    all_params_indexes = list(range(281))
+    def check_if_exists_and_remove_indexes(indexes):
+        for idx in indexes:
+            if idx in all_params_indexes:
+                all_params_indexes.remove(idx)
+            else:
+                raise AssertionError("Index {} already removed from all_params_indexes".format(idx))
+    check_if_exists_and_remove_indexes(Diva.get_UI_and_CPU_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_transpose_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_FX_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_clock_arp_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_panning_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_single_use_osc_filter_env_params_indexes())
+    check_if_exists_and_remove_indexes(Diva.get_possible_default_osc_filter_env_param_indexes())
+    print("{} remaining parameters: {}".format(len(all_params_indexes), all_params_indexes))
 
     print("Machine: '{}' ({} CPUs)".format(socket.gethostname(), os.cpu_count()))
 
