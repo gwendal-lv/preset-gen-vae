@@ -311,7 +311,8 @@ def train_config():
         logger.tensorboard.update_metrics(metrics)
 
         # = = = = = Model+optimizer(+scheduler) save - ready for next epoch = = = = =
-        if (epoch % config.train.save_period == 0) or (epoch == config.train.n_epochs-1) or early_stop:
+        if (epoch > 0 and epoch % config.train.save_period == 0)\
+                or (epoch == config.train.n_epochs-1) or early_stop:
             logger.save_checkpoint(epoch, extended_ae_model, optimizer, scheduler)
         logger.on_epoch_finished(epoch)
         if early_stop:

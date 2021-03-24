@@ -82,9 +82,9 @@ train.k_folds = 5
 train.current_k_fold = 0
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 # Total number of epochs (including previous training epochs)
-train.n_epochs = 500  # See update_dynamic_config_params()
-train.save_period = 20  # Period for model saves (large disk size). Tensorboard scalars/metric logs at all epochs.
-train.plot_period = 10  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU expensive)
+train.n_epochs = 700  # See update_dynamic_config_params()
+train.save_period = 50  # Period for checkpoint saves (large disk size). Tensorboard scalars/metric logs at all epochs.
+train.plot_period = 20  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU and SSD expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE (Flow VAE has its own specific loss)
 # When using a latent flow z0-->zK, z0 is not regularized. To keep values around 0.0, batch-norm or a 0.1Dkl can be used
 train.latent_flow_input_regularization = 'bn'  # 'bn' (on encoder output) or 'dkl' (on q_Z0 gaussian flow input)
@@ -128,7 +128,6 @@ train.verbosity = 1  # 0: no console output --> 3: fully-detailed per-batch cons
 train.init_security_pause = 0.0  # Short pause before erasing an existing run
 # Number of logged audio and spectrograms for a given epoch
 train.logged_samples_count = 4  # See update_dynamic_config_params()
-train.logged_samples_period = 10  # Epoch periods (not to store too much .wav/.png data)
 train.profiler_args = {'enabled': False, 'use_cuda': True, 'record_shapes': False,
                        'profile_memory': False, 'with_stack': False}
 train.profiler_full_trace = False  # If True, runs only a few batches then exits - but saves a fully detailed trace.json
