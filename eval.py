@@ -52,8 +52,9 @@ def evaluate_all_models(eval_config: utils.config.EvalConfig):
         evaluate_model(model_dir_path, eval_config)
 
 
-def get_eval_pickle_file_path(path_to_model_dir: Path, dataset_type: str):
-    return path_to_model_dir.joinpath('eval_{}.dataframe.pickle'.format(dataset_type))
+def get_eval_pickle_file_path(path_to_model_dir: Path, dataset_type: str, force_multi_note=False):
+    return path_to_model_dir.joinpath('eval_{}{}.dataframe.pickle'
+                                      .format(dataset_type, ('__MULTI_NOTE__' if force_multi_note else '')))
 
 
 def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig):
@@ -64,12 +65,23 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
     root_path = Path(__file__).resolve().parent
     t_start = datetime.now()
 
+    # Special forced multi-note eval?
+    if '__MULTI_NOTE__' in path_to_model_dir.name:
+        forced_midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
+        # We'll load the original model - quite dirty path modification
+        path_to_model_dir = Path(path_to_model_dir.__str__().replace('__MULTI_NOTE__', ''))
+        if eval_config.verbosity >= 1:
+            print("[eval.py] __MULTI_NOTE__ special evaluation")
+    else:
+        forced_midi_notes = None
+
     # Reload model and train config
     model_config, train_config = utils.config.get_config_from_file(path_to_model_dir.joinpath('config.json'))
     if eval_config.load_from_archives:
         model_config.logs_root_dir = "saved_archives"
     # Eval file to be created
-    eval_pickle_file_path = get_eval_pickle_file_path(path_to_model_dir, eval_config.dataset)
+    eval_pickle_file_path = get_eval_pickle_file_path(path_to_model_dir, eval_config.dataset,
+                                                      force_multi_note=(forced_midi_notes is not None))
     # Return now if eval already exists, and should not be overridden
     if os.path.exists(eval_pickle_file_path):
         if not eval_config.override_previous_eval:
@@ -81,6 +93,12 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
     # Reload the corresponding dataset, dataloaders and models
     train_config.verbosity = 1
     train_config.minibatch_size = eval_config.minibatch_size  # Will setup dataloaders as requested
+    # increase dataset size for multi-note eval or single-note trained models
+    if forced_midi_notes is not None:
+        model_config.midi_notes = forced_midi_notes
+        model_config.increased_dataset_size = True
+        if eval_config.verbosity >= 1:
+            print("[eval.py] __MULTI_NOTE__: forced-increased dataset size (single MIDI -> multiple MIDI)")
     dataset = data.build.get_dataset(model_config, train_config)
     # dataloader is a dict of 3 subsets dataloaders ('train', 'validation' and 'test')
     dataloader, sub_datasets_lengths = data.build.get_split_dataloaders(train_config, dataset)
@@ -93,11 +111,14 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
     extended_ae_model = extended_ae_model.to(device).eval()
     ae_model, reg_model = extended_ae_model.ae_model, extended_ae_model.reg_model
     torch.set_grad_enabled(False)
+    # Eval midi notes
+    eval_midi_notes = (dataset.midi_notes if forced_midi_notes is None else forced_midi_notes)
+    if eval_config.verbosity >= 1:
+        print("Evaluation will be performed on {} MIDI note(s): {}".format(len(eval_midi_notes), eval_midi_notes))
 
 
     # = = = = = 0) Structures and Criteria for evaluation metrics = = = = =
     # Empty dicts (one dict per preset), eventually converted to a pandas dataframe
-    # TODO handle the multi-note case....
     eval_metrics = list()  # list of dicts
     preset_UIDs = list()
     synth_params_GT = list()
@@ -113,6 +134,7 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
 
     # = = = = = 1) Infer all preset parameters = = = = =
     assert eval_config.minibatch_size == 1  # Required for per-preset metrics
+    # This dataset's might contains multiple MIDI notes for single-note models, if forced_midi_notes is True
     for i, sample in enumerate(dataloader[eval_config.dataset]):
         x_in, v_in, sample_info = sample[0].to(device), sample[1].to(device), sample[2].to(device)
         ae_out = ae_model(x_in, sample_info)  # Spectral VAE - tuple output
@@ -142,7 +164,8 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
     preset_UIDs_split = np.array_split(preset_UIDs, num_workers, axis=0)
     synth_params_GT_split = np.array_split(synth_params_GT, num_workers, axis=0)
     synth_params_inferred_split = np.array_split(synth_params_inferred, num_workers, axis=0)
-    workers_data = [(dataset, preset_UIDs_split[i], synth_params_GT_split[i], synth_params_inferred_split[i])
+    workers_data = [(dataset, eval_midi_notes,
+                     preset_UIDs_split[i], synth_params_GT_split[i], synth_params_inferred_split[i])
                     for i in range(num_workers)]
     # Multi-processing is absolutely necessary
     with multiprocessing.Pool(num_workers) as p:
@@ -168,7 +191,7 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
         eval_metrics_no_duplicates.append(dict())
         eval_sub_df = eval_df.loc[eval_df['preset_UID'] == preset_UID]
         eval_metrics_no_duplicates[-1]['preset_UID'] = preset_UID
-        for col in eval_sub_df:
+        for col in eval_sub_df:  # Average all metrics
             if col != 'preset_UID':
                 eval_metrics_no_duplicates[-1][col] = eval_sub_df[col].mean()
     eval_df = pd.DataFrame(eval_metrics_no_duplicates)
@@ -182,23 +205,26 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
 
 
 def _measure_audio_errors_worker(worker_args):
-    return _measure_audio_errors(worker_args[0], worker_args[1], worker_args[2], worker_args[3])
+    return _measure_audio_errors(*worker_args)
 
 
-def _measure_audio_errors(dataset: data.abstractbasedataset.PresetDataset, preset_UIDs: Sequence,
-                          synth_params_GT: np.ndarray, synth_params_inferred: np.ndarray):
-    midi_pitch, midi_velocity = dataset.default_midi_note
+def _measure_audio_errors(dataset: data.abstractbasedataset.PresetDataset, midi_notes,
+                          preset_UIDs: Sequence, synth_params_GT: np.ndarray, synth_params_inferred: np.ndarray):
+    # Dict of per-UID errors (if multiple notes: note-averaged values)
     errors = {'spec_mae': list(), 'spec_sc': list(), 'mfcc_mae': list()}
     for idx, preset_UID in enumerate(preset_UIDs):
-        x_wav_original, _ = dataset.get_wav_file(preset_UID, midi_pitch, midi_velocity)
-        x_wav_inferred, _ = dataset._render_audio(synth_params_inferred[idx], midi_pitch, midi_velocity)
-        similarity_eval = utils.audio.SimilarityEvaluator((x_wav_original, x_wav_inferred))
-        mae, s = similarity_eval.get_mae_log_stft()
-        sc, s = similarity_eval.get_spectral_convergence()
-        mfcc_mae, mfcc = similarity_eval.get_mae_mfcc()
-        errors['spec_mae'].append(mae)
-        errors['spec_sc'].append(sc)
-        errors['mfcc_mae'].append(mfcc_mae)
+        mae, sc, mfcc_mae = list(), list(), list()  # Per-note errors (might be single-element lists)
+        for midi_pitch, midi_velocity in midi_notes:  # Possible multi-note evaluation
+            x_wav_original, _ = dataset.get_wav_file(preset_UID, midi_pitch, midi_velocity)  # Pre-rendered file
+            x_wav_inferred, _ = dataset._render_audio(synth_params_inferred[idx], midi_pitch, midi_velocity)
+            similarity_eval = utils.audio.SimilarityEvaluator((x_wav_original, x_wav_inferred))
+            mae.append(similarity_eval.get_mae_log_stft(return_spectrograms=False))
+            sc.append(similarity_eval.get_spectral_convergence(return_spectrograms=False))
+            mfcc_mae.append(similarity_eval.get_mae_mfcc(return_mfccs=False))
+        # Average errors over all played MIDI notes
+        errors['spec_mae'].append(np.mean(mae))
+        errors['spec_sc'].append(np.mean(sc))
+        errors['mfcc_mae'].append(np.mean(mfcc_mae))
     for error_name in errors:
         errors[error_name] = np.asarray(errors[error_name])
     return errors

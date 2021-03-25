@@ -324,6 +324,15 @@ def train_config():
     logger.on_training_finished()
 
 
+    # ========== "Manual GC" (to try to prevent random CUDA out-of-memory between enqueued runs ==========
+    del scheduler, optimizer
+    del reg_model_parallel, ae_model_parallel
+    del extended_ae_model
+    del controls_criterion, controls_num_eval_criterion, controls_accuracy_criterion, reconstruction_criterion
+    del logger
+    del dataloader, dataset
+
+
 if __name__ == "__main__":
     # Normal run, config.py only will be used to parametrize learning and models
     train_config()

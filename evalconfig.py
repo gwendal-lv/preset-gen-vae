@@ -11,18 +11,28 @@ from utils.config import EvalConfig
 eval = EvalConfig()  # (shadows unused built-in name)
 eval.start_datetime = datetime.datetime.now().isoformat()
 
-# Names must be include experiment folder and run name (_kf suffix can be omitted is all_k_folds is True)
-# ExtVAE3/00_*** had a 1024-ch mixer
-#'ExtVAE3/00_dex3op_numonly_1midi',
-#'ExtVAE3/01_dex6op_numonly_1midi',
-#'ExtVAE3/02_dex3op_vstcat_1midi',
-#'ExtVAE3/03_dex6op_vstcat_1midi',
-eval.models_names = ['ExtVAE3/10_dex3op_numonly_1midi',
-                     'ExtVAE3/11_dex6op_numonly_1midi',
-                     'ExtVAE3/12_dex3op_vstcat_1midi',
-                     'ExtVAE3/13_dex6op_vstcat_1midi',
-                     'ExtVAE3/14_dex3op_all<=32_1midi',
-                     'ExtVAE3/15_dex6op_all<=32_1midi',
+# Names must be include experiment folder and run name (_kf suffix must be omitted is all_k_folds is True)
+eval.models_names = [  # - - - 16k samples dataset - - -
+                     #'ExtVAE3/10_dex3op_numonly_1midi',  # Single-note models evaluated on 1 MIDI note
+                     #'ExtVAE3/11_dex6op_numonly_1midi',
+                     #'ExtVAE3/12_dex3op_vstcat_1midi',
+                     #'ExtVAE3/13_dex6op_vstcat_1midi',
+                     #'ExtVAE3/14_dex3op_all<=32_1midi',
+                     #'ExtVAE3/14_dex3op_all<=32_1midi__MULTI_NOTE__',  # Special eval: forced multi-note eval
+                     #'ExtVAE3/15_dex6op_all<=32_1midi',
+                     #'ExtVAE3/15_dex6op_all<=32_1midi__MULTI_NOTE__',
+                     #'MLPVAE/20_dex3op_numonly_1midi',
+                     #'MLPVAE/21_dex6op_numonly_1midi',
+                     #'MLPVAE/22_dex3op_vstcat_1midi',
+                     #'MLPVAE/23_dex6op_vstcat_1midi',
+                     #'MLPVAE/24_dex3op_all<=32_1midi',
+                     #'MLPVAE/25_dex6op_all<=32_1midi',
+                     #'FlVAE/34_dex3op_all<=32_6midi',  # Multi-note models evaluated on all learned notes
+                     #'FlVAE/35_dex6op_all<=32_6midi',
+                     #'FlVAE/44_dex3op_all<=32_6stack',
+                     #'FlVAE/45_dex6op_all<=32_6stack',
+                     # - - - 30k samples full dataset - - -
+                     # TODO
                      ]
 eval.dataset = 'test'  # Do not use 'test' dataset during models development
 eval.override_previous_eval = False  # If True, all models be re-evaluated (might be very long)

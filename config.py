@@ -82,7 +82,7 @@ train.k_folds = 5
 train.current_k_fold = 0
 train.start_epoch = 0  # 0 means a restart (previous data erased). If > 0: will load start_epoch-1 checkpoint
 # Total number of epochs (including previous training epochs)
-train.n_epochs = 700  # See update_dynamic_config_params()
+train.n_epochs = 400  # See update_dynamic_config_params().  16k sample dataset: set to 700
 train.save_period = 50  # Period for checkpoint saves (large disk size). Tensorboard scalars/metric logs at all epochs.
 train.plot_period = 20  # Period (in epochs) for plotting graphs into Tensorboard (quite CPU and SSD expensive)
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE (Flow VAE has its own specific loss)
@@ -100,7 +100,7 @@ train.optimizer = 'Adam'
 # LR decreased if non-normalized losses (which are expected to be 90,000 times bigger with a 257x347 spectrogram)
 train.initial_learning_rate = 2e-4  # e-9 LR with e+4 loss does not allow any train (vanishing grad?)
 # Learning rate warmup (see https://arxiv.org/abs/1706.02677)
-train.lr_warmup_epochs = 10  # See update_dynamic_config_params()
+train.lr_warmup_epochs = 6  # See update_dynamic_config_params(). 16k samples dataset: set to 10
 train.lr_warmup_start_factor = 0.1
 train.adam_betas = (0.9, 0.999)  # default (0.9, 0.999)
 train.weight_decay = 1e-4  # Dynamic weight decay?
@@ -110,7 +110,7 @@ train.reg_fc_dropout = 0.4
 train.beta = 0.2  # latent loss factor - use much lower value (e-2) to get closer the ELBO
 train.beta_start_value = 0.1  # Should not be zero (risk of a very unstable training)
 # Epochs of warmup increase from start_value to beta
-train.beta_warmup_epochs = 40  # See update_dynamic_config_params()
+train.beta_warmup_epochs = 25  # See update_dynamic_config_params(). 16k samples dataset: set to 40
 train.beta_cycle_epochs = -1  # beta cyclic annealing (https://arxiv.org/abs/1903.10145). -1 deactivates TODO do
 
 train.scheduler_name = 'ReduceLROnPlateau'  # TODO try CosineAnnealing
@@ -118,8 +118,8 @@ train.scheduler_name = 'ReduceLROnPlateau'  # TODO try CosineAnnealing
 train.scheduler_loss = ('ReconsLoss/Backprop', 'Controls/BackpropLoss')
 train.scheduler_lr_factor = 0.2
 # Set a longer patience with smaller datasets and quite unstable trains
-train.scheduler_patience = 10  # See update_dynamic_config_params()
-train.scheduler_cooldown = 10  # See update_dynamic_config_params()
+train.scheduler_patience = 6  # See update_dynamic_config_params(). 16k samples dataset:  set to 10
+train.scheduler_cooldown = 6  # See update_dynamic_config_params(). 16k samples dataset: set to 10
 train.scheduler_threshold = 1e-4
 # Training considered "dead" when dynamic LR reaches this value
 train.early_stop_lr_threshold = None  # See update_dynamic_config_params()
@@ -160,8 +160,8 @@ def update_dynamic_config_params():
     train.early_stop_lr_threshold = train.initial_learning_rate * 1e-3
     train.logged_samples_count = max(train.logged_samples_count, len(model.midi_notes))
     # Train hyper-params (epochs counts) that should be reduced with artificially increased datasets
-    if model.increased_dataset_size:
-        N = len(model.midi_notes) - 1
+    if model.increased_dataset_size:  # Stacked spectrogram do not increase the dataset size (number of items)
+        N = len(model.midi_notes) - 1  # reduce a bit less that dataset's size increase
         train.n_epochs = 1 + train.n_epochs // N
         train.lr_warmup_epochs = 1 + train.lr_warmup_epochs // N
         train.scheduler_patience = 1 + train.scheduler_patience // N

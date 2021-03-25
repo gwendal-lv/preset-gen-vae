@@ -109,14 +109,14 @@ class SimilarityEvaluator:
         # Pre-compute STFT (used in mae log and spectral convergence)
         self.stft = [np.abs(librosa.stft(x, self.n_fft, self.fft_hop)) for x in self.x_wav]
 
-    def get_mae_log_stft(self):
+    def get_mae_log_stft(self, return_spectrograms=True):
         """ Returns the Mean Absolute Error on log(|STFT|) spectrograms of input sounds, and the two spectrograms
         themselves (e.g. for plotting them later). """
         eps = 1e-4  # -80dB  (un-normalized stfts)
         log_stft = [np.maximum(s, eps) for s in self.stft]
         log_stft = [np.log10(s) for s in log_stft]
-        mae = np.abs(log_stft[1] - log_stft[0])
-        return mae.mean(), log_stft
+        mae = np.abs(log_stft[1] - log_stft[0]).mean()
+        return (mae, log_stft) if return_spectrograms else mae
 
     def display_stft(self, s, log_scale=True):
         """ Displays given spectrograms s (List of two |STFT|) """
@@ -131,17 +131,20 @@ class SimilarityEvaluator:
         fig.tight_layout()
         return fig, axes
 
-    def get_spectral_convergence(self):
+    def get_spectral_convergence(self, return_spectrograms=True):
         """ Returns the Spectral Convergence of input sounds, and the two linear-scale spectrograms
             used to compute SC (e.g. for plotting them later). SC: see https://arxiv.org/abs/1808.06719 """
         # Frobenius norm is actually the default numpy matrix norm
         sc = np.linalg.norm(self.stft[0] - self.stft[1], ord='fro') / np.linalg.norm(self.stft[0], ord='fro')
-        return sc, self.stft
+        return (sc, self.stft) if return_spectrograms else sc
 
-    def get_mae_mfcc(self):
-        """ Returns the Mean Absolute Error on MFCCs. Number of """
+    def get_mae_mfcc(self, return_mfccs=True):
+        """ Returns the Mean Absolute Error on MFCCs, and the MFCCs themselves.
+        Uses librosa default MFCCs configuration: TODO precise
+        """
         mfcc = [librosa.feature.mfcc(x, sr=self.sr, n_mfcc=self.n_mfcc) for x in self.x_wav]
-        return np.abs(mfcc[0] - mfcc[1]).mean(), mfcc
+        mae = np.abs(mfcc[0] - mfcc[1]).mean()
+        return (mae, mfcc) if return_mfccs else mae
 
     def display_mfcc(self, mfcc):
         fig, axes = plt.subplots(1, 2, figsize=(6, 3))
