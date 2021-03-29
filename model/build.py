@@ -9,13 +9,25 @@ from model import VAE, encoder, decoder, extendedAE, regression
 
 
 def build_encoder_and_decoder_models(model_config, train_config):
+    # Backward compatibility - recently added config args
+    if not hasattr(model_config, 'stack_specs_deepest_features_mix'):
+        model_config.stack_specs_deepest_features_mix = True  # Default: multi-spec features mixed by 1x1 conv layer
+    # Multi-MIDI notes but single-ch spectrogram model must be bigger (to perform a fairer comparison w/ multi-ch)
+    force_bigger_network = ((len(model_config.midi_notes) > 1) and not model_config.stack_spectrograms)
     # Encoder and decoder with the same architecture
     enc_z_length = (model_config.dim_z - 2 if model_config.concat_midi_to_z else model_config.dim_z)
-    encoder_model = encoder.SpectrogramEncoder(model_config.encoder_architecture, enc_z_length,
-                                               model_config.input_tensor_size, train_config.fc_dropout,
-                                               output_bn=(train_config.latent_flow_input_regularization.lower() == 'bn'))
+
+    print("FORCE BIGGER ENC/DEC NETWORKS = {}".format(force_bigger_network))  # TODO remove
+    print("MIDI NOTES = {}".format(model_config.midi_notes))  # TODO remove
+    encoder_model = \
+        encoder.SpectrogramEncoder(model_config.encoder_architecture, enc_z_length,
+                                   model_config.input_tensor_size, train_config.fc_dropout,
+                                   output_bn=(train_config.latent_flow_input_regularization.lower() == 'bn'),
+                                   deepest_features_mix=model_config.stack_specs_deepest_features_mix,
+                                   force_bigger_network=force_bigger_network)
     decoder_model = decoder.SpectrogramDecoder(model_config.encoder_architecture, model_config.dim_z,
-                                               model_config.input_tensor_size, train_config.fc_dropout)
+                                               model_config.input_tensor_size, train_config.fc_dropout,
+                                               force_bigger_network=force_bigger_network)
     return encoder_model, decoder_model
 
 
@@ -34,7 +46,7 @@ def build_ae_model(model_config, train_config):
         ae_model = VAE.BasicVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
                                 train_config.latent_loss)
     else:
-        # TODO flow dropout (in all but the last flow layers)
+        # TODO test latent flow dropout (in all but the last flow layers)
         ae_model = VAE.FlowVAE(encoder_model, model_config.dim_z, decoder_model, train_config.normalize_losses,
                                model_config.latent_flow_arch, concat_midi_to_z0=model_config.concat_midi_to_z)
     return encoder_model, decoder_model, ae_model
@@ -45,17 +57,22 @@ def build_extended_ae_model(model_config, train_config, idx_helper):
     latent vectors as input. Both models are integrated into an ExtendedAE model. """
     # Spectral VAE
     encoder_model, decoder_model, ae_model = build_ae_model(model_config, train_config)
+    # Config checks - for backward compatibility
+    if not hasattr(model_config, 'params_reg_softmax'):
+        model_config.params_reg_softmax = True  # Default value is True (legacy behavior)
     # Regression model - extension of the VAE model
     if model_config.params_regression_architecture.startswith("mlp_"):
         assert model_config.forward_controls_loss is True  # Non-invertible MLP cannot inverse target values
         reg_arch = model_config.params_regression_architecture.replace("mlp_", "")
-        reg_model = regression.MLPRegression(reg_arch, model_config.dim_z, idx_helper, train_config.reg_fc_dropout)
+        reg_model = regression.MLPRegression(reg_arch, model_config.dim_z, idx_helper, train_config.reg_fc_dropout,
+                                             cat_softmax_activation=model_config.params_reg_softmax)
     elif model_config.params_regression_architecture.startswith("flow_"):
         assert model_config.learnable_params_tensor_length > 0  # Flow models require dim_z to be equal to this length
         reg_arch = model_config.params_regression_architecture.replace("flow_", "")
         reg_model = regression.FlowRegression(reg_arch, model_config.dim_z, idx_helper,
                                               fast_forward_flow=model_config.forward_controls_loss,
-                                              dropout_p=train_config.reg_fc_dropout)
+                                              dropout_p=train_config.reg_fc_dropout,
+                                              cat_softmax_activation=model_config.params_reg_softmax)
     else:
         raise NotImplementedError("Synth param regression arch '{}' not implemented"
                                   .format(model_config.params_regression_architecture))

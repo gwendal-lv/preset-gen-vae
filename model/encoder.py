@@ -22,21 +22,52 @@ def available_architectures():
 
 class SpectrogramEncoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu and logs(var) values"""
-    def __init__(self, architecture, dim_z, input_tensor_size, fc_dropout, output_bn=False):
+    def __init__(self, architecture, dim_z, input_tensor_size, fc_dropout, output_bn=False,
+                 deepest_features_mix=True, force_bigger_network=False):
+        """
+
+        :param architecture:
+        :param dim_z:
+        :param input_tensor_size:
+        :param fc_dropout:
+        :param output_bn:
+        :param deepest_features_mix: (applies to multi-channel spectrograms only) If True, features mixing will be
+            done on the 1x1 deepest conv layer. If False, mixing will be done before the deepest conv layer (see
+            details in implementation)
+        :param force_bigger_network: Optional, to impose a higher number of channels for the last 4x4 (should be
+            used for fair comparisons between single/multi-specs encoder)
+        """
         super().__init__()
         self.dim_z = dim_z  # Latent-vector size (2*dim_z encoded values - mu and logs sigma 2)
         self.spectrogram_channels = input_tensor_size[1]
         self.architecture = architecture
-        self.mixer_1x1conv_ch = 2048
+        self.deepest_features_mix = deepest_features_mix
+        # 2048 if single-ch, 1024 if multi-channel 4x4 mixer (to compensate for the large number of added params)
+        self.mixer_1x1conv_ch = 1024 if (self.spectrogram_channels > 1) else 2048
         self.fc_dropout = fc_dropout
         # - - - - - 1) Main CNN encoder (applied once per input spectrogram channel) - - - - -
-        # stacked spectrograms: don't add the final 1x1 conv layer
-        self.single_ch_cnn = SpectrogramCNN(self.architecture, append_1x1_conv=False)
+        # stacked spectrograms: don't add the final 1x1 conv layer, or the 2 last conv layers (1x1 and 4x4)
+        self.single_ch_cnn = SpectrogramCNN(self.architecture, last_layers_to_remove=(1 if self.deepest_features_mix
+                                                                                      else 2))
         # - - - - - 2) Features mixer - - - - -
         assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
-        self.features_mixer_cnn = layer.Conv2D(512*self.spectrogram_channels, self.mixer_1x1conv_ch,
-                                               [1, 1], [1, 1], 0, [1, 1],
-                                               activation=nn.LeakyReLU(0.1), name_prefix='enc1x1', batch_norm=None)
+        self.features_mixer_cnn = nn.Sequential()
+        if self.deepest_features_mix:
+            self.features_mixer_cnn = layer.Conv2D(512*self.spectrogram_channels, self.mixer_1x1conv_ch,
+                                                   [1, 1], [1, 1], 0, [1, 1],
+                                                   activation=nn.LeakyReLU(0.1), name_prefix='enc8', batch_norm=None)
+        else:  # mixing conv layer: deepest-1 (4x4 kernel)
+            if not force_bigger_network:  # Default: auto-managed number of layers
+                n_4x4_ch = 512 if self.spectrogram_channels == 1 else 768
+            else:
+                n_4x4_ch = 1800  # Forced number of layers, for some very specific experiments only
+            self.features_mixer_cnn \
+                = nn.Sequential(layer.Conv2D(256*self.spectrogram_channels, n_4x4_ch, [4, 4], [2, 2], 2, [1, 1],
+                                             activation=nn.LeakyReLU(0.1), name_prefix='enc7'),
+                                layer.Conv2D(n_4x4_ch, self.mixer_1x1conv_ch,
+                                             [1, 1], [1, 1], 0, [1, 1],
+                                             activation=nn.LeakyReLU(0.1), name_prefix='enc8', batch_norm=None)
+                                )
         # - - - - - 3) MLP for extracting properly-sized latent vector - - - - -
         # Automatic CNN output tensor size inference
         with torch.no_grad():
@@ -82,12 +113,16 @@ class SpectrogramCNN(nn.Module):
 
     # TODO Option to enable res skip connections
     # TODO Option to choose activation function
-    def __init__(self, architecture, append_1x1_conv=True):
-        """ Automatically defines an autoencoder given the specified architecture
+    def __init__(self, architecture, last_layers_to_remove=0):
+        """
+        Automatically defines an autoencoder given the specified architecture
+
+        :param last_layers_to_remove: Number of deepest conv layers to omit in this module (they will be added in
+            the owner of this pure-CNN module).
         """
         super().__init__()
         self.architecture = architecture
-        if not append_1x1_conv:
+        if last_layers_to_remove > 0:
             assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
 
         if self.architecture == 'wavenet_baseline'\
@@ -194,6 +229,7 @@ class SpectrogramCNN(nn.Module):
             # TODO le même mais avec des res-blocks add (avg-pool?)
             # TODO le même mais + profond (couches sans stride)
             # TODO le même mais + profond, en remplacer chaque conv 2d par un res-block 2 couches
+
         elif self.architecture == 'speccnn8l1_bn':  # 1.7 GB (RAM) ; 0.12 GMultAdd  (batch 256)
             ''' Where to use BN? 'ESRGAN' generator does not use BN in the first and last conv layers.
             DCGAN: no BN on discriminator in out generator out.
@@ -213,11 +249,12 @@ class SpectrogramCNN(nn.Module):
                                         layer.Conv2D(64, 128, [4, 4], [2, 2], 2, [1, 1],
                                                      activation=act(act_p), name_prefix='enc5'),
                                         layer.Conv2D(128, 256, [4, 4], [2, 2], 2, [1, 1],
-                                                     activation=act(act_p), name_prefix='enc6'),
-                                        layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
-                                                     activation=act(act_p), name_prefix='enc7')
+                                                     activation=act(act_p), name_prefix='enc6')
                                         )
-            if append_1x1_conv:
+            if last_layers_to_remove <= 1:
+                self.enc_nn.add_module('4x4conv', layer.Conv2D(256, 512, [4, 4], [2, 2], 2, [1, 1],
+                                                               activation=act(act_p), name_prefix='enc7'))
+            if last_layers_to_remove == 0:
                 self.enc_nn.add_module('1x1conv', layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1], batch_norm=None,
                                                                activation=act(act_p), name_prefix='enc8'))
         elif self.architecture == 'speccnn8l1_2':  # 5.8 GB (RAM) ; 0.65 GMultAdd  (batch 256)

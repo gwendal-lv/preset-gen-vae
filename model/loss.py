@@ -4,6 +4,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from nflows.transforms.base import CompositeTransform
 
@@ -76,7 +77,8 @@ class SynthParamsLoss:
 
     The categorical loss is categorical cross-entropy. """
     def __init__(self, idx_helper: PresetIndexesHelper, normalize_losses: bool, categorical_loss_factor=0.2,
-                 prevent_useless_params_loss=True):
+                 prevent_useless_params_loss=True,
+                 cat_bce=True, cat_softmax=False, cat_softmax_t=0.1):
         """
 
         :param idx_helper: PresetIndexesHelper instance, created by a PresetDatabase, to convert vst<->learnable params
@@ -87,9 +89,20 @@ class SynthParamsLoss:
         :param prevent_useless_params_loss: If True, the class will search for useless params (e.g. params which
             correspond to a disabled oscillator and have no influence on the output sound). This introduces a
             TODO describe overhead here
+        :param cat_softmax: Should be set to True if the regression network does not apply softmax at its output.
+            This implies that a Categorical Cross-Entropy Loss will be computed on categorical sub-vectors.
+        :param cat_softmax_t: Temperature of the softmax activation applied to cat parameters
+        :param cat_bce: Binary Cross-Entropy applied to independent outputs (see InverSynth 2019). Very bad
+            perfs but option remains available.
         """
         self.idx_helper = idx_helper
         self.normalize_losses = normalize_losses
+        if cat_bce and cat_softmax:
+            raise ValueError("'cat_bce' (Binary Cross-Entropy) and 'cat_softmax' (implies Categorical Cross-Entropy)"
+                             "cannot be both set to True")
+        self.cat_bce = cat_bce
+        self.cat_softmax = cat_softmax
+        self.cat_softmax_t = cat_softmax_t
         self.cat_loss_factor = categorical_loss_factor
         self.prevent_useless_params_loss = prevent_useless_params_loss
         # Numerical loss criterion
@@ -139,16 +152,29 @@ class SynthParamsLoss:
                 # Direct cross-entropy computation. The one-hot target is used to select only q output probabilities
                 # corresponding to target classes with p=1. We only need a limited number of output probabilities
                 # (they actually all depend on each other thanks to the softmax output layer).
-                target_one_hot = u_in[:, cat_learn_indexes].bool()  # Will be used for tensor-element selection
+                if not self.cat_bce:  # Categorical CE
+                    target_one_hot = u_in[:, cat_learn_indexes].bool()  # Will be used for tensor-element selection
+                else:  # Binary CE: float values required
+                    target_one_hot = u_in[:, cat_learn_indexes]
                 if useful_rows is not None:  # Some rows can be discarded from loss computation
                     target_one_hot = target_one_hot[useful_rows, :]
-                # Then the cross-entropy can be computed (simplified formula thanks to p=1.0 one-hot odds)
-                q_odds = u_out[:, cat_learn_indexes]  # contains all q odds
-                if useful_rows is not None:  # Some rows can be discarded from loss computation
+                q_odds = u_out[:, cat_learn_indexes]  # contains all q odds required for BCE or CCE
+                # The same rows must be discarded from loss computation (if the preset didn't use this cat param)
+                if useful_rows is not None:
                     q_odds = q_odds[useful_rows, :]
-                q_odds = q_odds[target_one_hot]  # Cross-entropy uses only 1 odd per output vector (thanks to softmax)
-                # batch-sum and normalization vs. batch size
-                cat_loss += - torch.sum(torch.log(q_odds)) / (batch_size - len(rows_to_remove))
+                if not self.cat_bce:  # - - - - - NOT Binary CE => Categorical CE - - - - -
+                    # softmax T° if required: q_odds might not sum to 1.0 already if no softmax was applied before
+                    if self.cat_softmax:
+                        q_odds = torch.softmax(q_odds / self.cat_softmax_t, dim=1)
+                    # Then the cross-entropy can be computed (simplified formula thanks to p=1.0 one-hot odds)
+                    q_odds = q_odds[target_one_hot]  # CE uses only 1 odd per output vector (thanks to softmax)
+                    # batch-sum and normalization vs. batch size
+                    param_cat_loss = - torch.sum(torch.log(q_odds)) / (batch_size - len(rows_to_remove))
+                else:  # - - - - - Binary Cross-Entropy - - - - -
+                    # empirical normalization factor - works quite well to get similar CCE and BCE values
+                    param_cat_loss = F.binary_cross_entropy(q_odds, target_one_hot, reduction='mean') / 8.0
+                # CCE and BCE: add the temp per-param loss
+                cat_loss += param_cat_loss
                 # TODO instead of final factor: maybe divide the each cat loss by the one-hot vector length?
                 #    maybe not: cross-entropy always uses only 1 of the odds... (softmax does the job before)
             if self.normalize_losses:  # Normalization vs. number of categorical-learned params
@@ -284,6 +310,5 @@ class FlowParamsLoss:
         # Result is batch-size normalized
         # TODO loss factor as a ctor arg
         return - torch.mean(z_0_log_prob + log_abs_det_jac_inverse_T + log_abs_det_jac_inverse_U) / 1000.0
-
 
 

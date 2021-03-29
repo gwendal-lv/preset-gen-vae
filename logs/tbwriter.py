@@ -60,6 +60,8 @@ class TensorboardSummaryWriter(CorrectedSummaryWriter):
         self.hyper_params['controls'] = self.model_config.synth_params_count
         # Synth controls regression - not logged anymore (see model_config.synth_vst_params_learned_as_categorical)
         # self.hyper_params['contloss'] = self.model_config.controls_losses
+        self.hyper_params['regsoftm'] = self.model_config.params_reg_softmax
+        self.hyper_params['regcatlo'] = 'BinCE' if self.train_config.params_cat_bceloss else 'CatCE'
         self.hyper_params['regarch'] = self.model_config.params_regression_architecture
         self.hyper_params['latfarch'] = self.model_config.latent_flow_arch
         # Auto-Encoder hparams

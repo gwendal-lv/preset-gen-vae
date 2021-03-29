@@ -19,11 +19,12 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 model = _Config()
 model.name = "ExtVAE3"
 model.run_name = '00'  # run: different hyperparams, optimizer, etc... for a given model
-model.allow_erase_run = False  # If True, a previous run with identical name will be erased before training
+model.allow_erase_run = True  # If True, a previous run with identical name will be erased before training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
 # Possible values: 'flow_realnvp_4l180', 'mlp_3l1024', ... (configurable numbers of layers and neurons)
 model.params_regression_architecture = 'flow_realnvp_6l300'
+model.params_reg_softmax = False  # Apply softmax in the flow itself? If False: cat loss can be BCE or CCE
 # Spectrogram size cannot easily be modified - all CNN decoders should be re-written
 model.note_duration = (3.0, 1.0)
 model.sampling_rate = 22050
@@ -34,6 +35,7 @@ model.mel_f_limits = (0, 11050)  # min/max Mel-spectrogram frequencies TODO impl
 model.midi_notes = ((60, 85), )  # Reference note
 # model.midi_notes = ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85))
 model.stack_spectrograms = False  # If True, dataset will feed multi-channel spectrograms to the encoder
+model.stack_specs_deepest_features_mix = False  # if True, feats mixed in the deepest 1x1 conv, else in the deepest 4x4
 # If True, each preset is presented several times per epoch (nb of train epochs must be reduced) such that the
 # dataset size is artificially increased (6x bigger with 6 MIDI notes) -> warmup and patience epochs must be scaled
 model.increased_dataset_size = None  # See update_dynamic_config_params()
@@ -64,11 +66,11 @@ model.learnable_params_tensor_length = -1  # Will be set automatically - see dat
 # Possible values: None, 'vst_cat' or 'all<=xx' where xx is numerical params threshold cardinal
 model.synth_vst_params_learned_as_categorical = 'all<=32'
 # flags/values to describe the dataset to be used
-model.dataset_labels = ('harmonic', 'percussive')  # tuple of labels, or None to use all available labels
-# Dexed: Preset Algorithms and activated Operators (List of ints, None to use all)
+model.dataset_labels = None  # tuple of labels (e.g. ('harmonic', 'percussive')), or None to use all available labels
+# Dexed: Preset Algorithms, and activated Operators (Lists of ints, None to use all)
+# Limited algorithms (non-symmetrical only): [1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18]
 # Other synth: ...?
-model.dataset_synth_args = ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
-                            [1, 2, 3, 4, 5, 6])
+model.dataset_synth_args = (None, [1, 2, 3, 4, 5, 6])
 # Directory for saving metrics, samples, models, etc... see README.md
 model.logs_root_dir = "saved"  # Path from this directory
 
@@ -88,6 +90,8 @@ train.plot_period = 20  # Period (in epochs) for plotting graphs into Tensorboar
 train.latent_loss = 'Dkl'  # Latent regularization loss: Dkl or MMD for Basic VAE (Flow VAE has its own specific loss)
 # When using a latent flow z0-->zK, z0 is not regularized. To keep values around 0.0, batch-norm or a 0.1Dkl can be used
 train.latent_flow_input_regularization = 'bn'  # 'bn' (on encoder output) or 'dkl' (on q_Z0 gaussian flow input)
+train.params_cat_bceloss = False  # If True, disables the Categorical Cross-Entropy loss to compute BCE loss instead
+train.params_cat_softmax_temperature = 0.2  # Temperature if softmax if applied in the loss only
 # Losses normalization allow to get losses in the same order of magnitude, but does not optimize the true ELBO.
 # When un-normalized, the reconstruction loss (log-probability of a multivariate gaussian) is orders of magnitude
 # bigger than other losses. Train does not work with normalize=False at the moment - use train.beta to compensate
@@ -159,7 +163,15 @@ def update_dynamic_config_params():
     # Dynamic train hyper-params
     train.early_stop_lr_threshold = train.initial_learning_rate * 1e-3
     train.logged_samples_count = max(train.logged_samples_count, len(model.midi_notes))
+    # Train hyper-params (epochs counts) that should be increased when using a subset of the dataset
+    if model.dataset_synth_args[0] is not None:  # Limited Dexed algorithms?  TODO handle non-dexed synth
+        train.n_epochs = 700
+        train.lr_warmup_epochs = 10
+        train.scheduler_patience = 10
+        train.scheduler_cooldown = 10
+        train.beta_warmup_epochs = 40
     # Train hyper-params (epochs counts) that should be reduced with artificially increased datasets
+    # Augmented  datasets introduce 6x more backprops <=> 6x more epochs. Patience and cooldown must however remain >= 2
     if model.increased_dataset_size:  # Stacked spectrogram do not increase the dataset size (number of items)
         N = len(model.midi_notes) - 1  # reduce a bit less that dataset's size increase
         train.n_epochs = 1 + train.n_epochs // N

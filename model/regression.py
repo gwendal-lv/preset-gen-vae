@@ -21,25 +21,35 @@ class PresetActivation(nn.Module):
     """ Applies the appropriate activations (e.g. sigmoid, hardtanh, softmax, ...) to different neurons
     or groups of neurons of a given input layer. """
     def __init__(self, idx_helper: PresetIndexesHelper,
-                 numerical_activation=nn.Hardtanh(min_val=0.0, max_val=1.0)):
+                 numerical_activation=nn.Hardtanh(min_val=0.0, max_val=1.0),
+                 cat_softmax_activation=False):
         """
         :param idx_helper:
         :param numerical_activation: Should be nn.Hardtanh if numerical params often reach 0.0 and 1.0 GT values,
             or nn.Sigmoid to perform a smooth regression without extreme 0.0 and 1.0 values.
+        :param cat_softmax_activation: if True, a softmax activation is applied on categorical sub-vectors.
+            Otherwise, applies the same HardTanh for cat and num params (and softmax should be applied in loss function)
         """
         super().__init__()
         self.idx_helper = idx_helper
         self.numerical_act = numerical_activation
-        self.categorical_act = nn.Softmax(dim=-1)  # Required for categorical cross-entropy loss
-        # Pre-compute indexes lists (to use less CPU)
-        self.num_indexes = self.idx_helper.get_numerical_learnable_indexes()
-        self.cat_indexes = self.idx_helper.get_categorical_learnable_indexes()  # type: Iterable[Iterable]
+        self.cat_softmax_activation = cat_softmax_activation
+        if self.cat_softmax_activation:
+            self.categorical_act = nn.Softmax(dim=-1)  # Required for categorical cross-entropy loss
+            # Pre-compute indexes lists (to use less CPU)
+            self.num_indexes = self.idx_helper.get_numerical_learnable_indexes()
+            self.cat_indexes = self.idx_helper.get_categorical_learnable_indexes()  # type: Iterable[Iterable]
+        else:
+            pass  # Nothing to init....
 
     def forward(self, x):
         """ Applies per-parameter output activations using the PresetIndexesHelper attribute of this instance. """
-        x[:, self.num_indexes] = self.numerical_act(x[:, self.num_indexes])
-        for cat_learnable_indexes in self.cat_indexes:  # type: Iterable
-            x[:, cat_learnable_indexes] = self.categorical_act(x[:, cat_learnable_indexes])
+        if self.cat_softmax_activation:
+            x[:, self.num_indexes] = self.numerical_act(x[:, self.num_indexes])
+            for cat_learnable_indexes in self.cat_indexes:  # type: Iterable
+                x[:, cat_learnable_indexes] = self.categorical_act(x[:, cat_learnable_indexes])
+        else:  # Same activation on num and cat ('one-hot encoded') params
+            x = self.numerical_act(x)
         return x
 
 
@@ -49,7 +59,8 @@ class PresetActivation(nn.Module):
 
 
 class MLPRegression(nn.Module):
-    def __init__(self, architecture, dim_z, idx_helper: PresetIndexesHelper, dropout_p=0.0):
+    def __init__(self, architecture, dim_z, idx_helper: PresetIndexesHelper, dropout_p=0.0,
+                 cat_softmax_activation=False):
         """
         :param architecture: MLP automatically built from architecture string. E.g. '3l1024' means
             3 hidden layers of 1024 neurons. Some options can be given after an underscore
@@ -81,7 +92,8 @@ class MLPRegression(nn.Module):
         self.reg_model.add_module('fc{}'.format(num_hidden_layers + 1), nn.Linear(num_hidden_neurons,
                                                                                   self.idx_helper.learnable_preset_size))
         # dedicated activation module - because we need a per-parameter activation (e.g. sigmoid or softmax)
-        self.reg_model.add_module('act', PresetActivation(self.idx_helper))
+        self.reg_model.add_module('act', PresetActivation(self.idx_helper,
+                                                          cat_softmax_activation=cat_softmax_activation))
 
     def forward(self, z_K):
         """ Applies the regression model to a z_K latent vector (VAE latent flow output samples). """
@@ -90,7 +102,7 @@ class MLPRegression(nn.Module):
 
 class FlowRegression(nn.Module):
     def __init__(self, architecture, dim_z, idx_helper: PresetIndexesHelper, dropout_p=0.0,
-                 fast_forward_flow=True):
+                 fast_forward_flow=True, cat_softmax_activation=False):
         """
         :param architecture: Flow automatically built from architecture string. E.g. 'realnvp_16l200' means
             16 RealNVP flow layers with 200 hidden features each. Some options can be given after an underscore
@@ -149,7 +161,7 @@ class FlowRegression(nn.Module):
             #   - needs ** huge ** amounts of GPU RAM
             self._forward_flow_transform = CompositeTransform(transforms)  # Fast forward  # TODO rename
 
-        self.activation_layer = PresetActivation(self.idx_helper)
+        self.activation_layer = PresetActivation(self.idx_helper, cat_softmax_activation=cat_softmax_activation)
 
     @property
     def is_flow_fast_forward(self):  # TODO improve, real nvp is fast forward and inverse...

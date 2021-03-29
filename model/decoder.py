@@ -8,7 +8,17 @@ from model import layer
 
 class SpectrogramDecoder(nn.Module):
     """ Contains a spectrogram-input CNN and some MLP layers, and outputs the mu/logsigma2 values"""
-    def __init__(self, architecture, dim_z, output_tensor_size, fc_dropout):
+    def __init__(self, architecture, dim_z, output_tensor_size, fc_dropout,
+                 force_bigger_network=False):
+        """
+
+        :param architecture:
+        :param dim_z:
+        :param output_tensor_size:
+        :param fc_dropout:
+        :param force_bigger_network: If True, some layers will contain more channels. Optional, should be
+            used to perform fair comparisons (same number of params) between different models.
+        """
         super().__init__()
         # TODO test bigger output spectrogram - with final centered crop
         self.output_tensor_size = output_tensor_size
@@ -19,6 +29,7 @@ class SpectrogramDecoder(nn.Module):
         self.architecture = architecture
         self.cnn_input_shape = None  # shape not including batch size
         self.mixer_1x1conv_ch = 2048
+        self.last_4x4conv_ch = (512 if not force_bigger_network else 1800)
         self.fc_dropout = fc_dropout
 
         if 'speccnn8l1' not in self.architecture:
@@ -58,21 +69,25 @@ class SpectrogramDecoder(nn.Module):
             raise NotImplementedError("Architecture '{}' not available".format(self.architecture))
 
         # - - - - - 2) Features "un-mixer" - - - - -
-        self.features_unmixer_cnn = layer.TConv2D(self.mixer_1x1conv_ch, self.spectrogram_channels*512,
+        self.features_unmixer_cnn = layer.TConv2D(self.mixer_1x1conv_ch,
+                                                  self.spectrogram_channels*self.last_4x4conv_ch,
                                                   [1, 1], [1, 1], 0,
                                                   activation=nn.LeakyReLU(0.1), name_prefix='dec1')
 
         # - - - - - 3) Main CNN decoder (applied once per spectrogram channel) - - - - -
         single_spec_size = list(self.spectrogram_input_size)
         single_spec_size[1] = 1
-        self.single_ch_cnn = SpectrogramCNN(self.architecture, single_spec_size, append_1x1_conv=False)
+        self.single_ch_cnn = SpectrogramCNN(self.architecture, single_spec_size, append_1x1_conv=False,
+                                            force_bigger_network=force_bigger_network)
 
     def forward(self, z_sampled):
         mixed_features = self.mlp(z_sampled)
         mixed_features = mixed_features.view(-1,  # batch size auto inferred
                                              self.cnn_input_shape[0], self.cnn_input_shape[1], self.cnn_input_shape[2])
         unmixed_features = self.features_unmixer_cnn(mixed_features)
-        single_ch_cnn_inputs = torch.split(unmixed_features, 512, dim=1)  # Split along channels dimension
+        # This won't work on multi-channel spectrograms with force_bigger_network==True (don't do this anyway)
+        single_ch_cnn_inputs = torch.split(unmixed_features, self.last_4x4conv_ch,  # actual multi-spec: 512ch-split
+                                           dim=1)  # Split along channels dimension
         single_ch_cnn_outputs = [self.single_ch_cnn(single_ch_in) for single_ch_in in single_ch_cnn_inputs]
         return torch.cat(single_ch_cnn_outputs, dim=1)  # Concatenate all single-channel spectrograms
 
@@ -80,7 +95,8 @@ class SpectrogramDecoder(nn.Module):
 class SpectrogramCNN(nn.Module):
     """ A decoder CNN network for spectrogram output """
 
-    def __init__(self, architecture, spectrogram_input_size, output_activation=nn.Hardtanh(), append_1x1_conv=True):
+    def __init__(self, architecture, spectrogram_input_size, output_activation=nn.Hardtanh(),
+                 append_1x1_conv=True, force_bigger_network=False):
         """ Defines a decoder given the specified architecture. """
         super().__init__()
         self.architecture = architecture
@@ -88,7 +104,6 @@ class SpectrogramCNN(nn.Module):
             assert self.architecture == 'speccnn8l1_bn'  # Only this arch is fully-supported at the moment
         self.spectrogram_input_size = spectrogram_input_size
         assert self.spectrogram_input_size[1] == 1  # This decoder is single-channel output
-        output_activation
 
         if self.architecture == 'wavenet_baseline':  # https://arxiv.org/abs/1704.01279
             ''' Symmetric layer output sizes (compared to the encoder).
@@ -183,10 +198,12 @@ class SpectrogramCNN(nn.Module):
 
         elif self.architecture == 'speccnn8l1'\
             or self.architecture == 'speccnn8l1_bn':  # 1.8 GB (RAM) ; 0.36 GMultAdd  (batch 256)
-            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes drastically reduced '''
+            ''' Inspired by the wavenet baseline spectral autoencoder, but all sizes are drastically reduced
+            (especially the last, not so useful but very GPU-expensive layers on large images) '''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
-            self.dec_nn = nn.Sequential(layer.TConv2D(512, 256, [4, 4], [2, 2], 2, output_padding=[1, 1],
+            self.dec_nn = nn.Sequential(layer.TConv2D((512 if not force_bigger_network else 1800),
+                                                      256, [4, 4], [2, 2], 2, output_padding=[1, 1],
                                                       activation=act(act_p), name_prefix='dec2'),
                                         layer.TConv2D(256, 128, [4, 4], [2, 2], 2, output_padding=[1, 0],
                                                       activation=act(act_p), name_prefix='dec3'),

@@ -61,9 +61,15 @@ def get_split_dataloaders(train_config, full_dataset, persistent_workers=True):
     dataloaders = dict()
     sub_datasets_lengths = dict()
     for k, sampler in subset_samplers.items():
+        # Last train minibatch must be dropped to help prevent training instability. Worst case example, last minibatch
+        # contains only 8 elements, mostly sfx: these hard to learn (or generate) item would have a much higher
+        # equivalent learning rate because all losses are minibatch-size normalized. No issue for eval though
+        drop_last = (k.lower() == 'train')
+        # Dataloaders based on previously built samplers
         dataloaders[k] = torch.utils.data.DataLoader(full_dataset, batch_size=train_config.minibatch_size,
                                                      sampler=sampler, num_workers=num_workers, pin_memory=False,
-                                                     persistent_workers=((num_workers > 0) and persistent_workers))
+                                                     persistent_workers=((num_workers > 0) and persistent_workers),
+                                                     drop_last=drop_last)
         sub_datasets_lengths[k] = len(sampler.indices)
         if train_config.verbosity >= 1:
             print("[data/build.py] Dataset '{}' contains {}/{} samples ({:.1f}%). num_workers={}"

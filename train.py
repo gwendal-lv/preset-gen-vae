@@ -103,8 +103,14 @@ def train_config():
         reconstruction_criterion = model.loss.L2Loss()
     # Controls backprop loss
     if config.model.forward_controls_loss:  # usual straightforward loss - compares inference and target
+        if config.train.params_cat_bceloss:
+            assert (not config.model.params_reg_softmax)  # BCE loss requires no-softmax at reg model output
         controls_criterion = model.loss.SynthParamsLoss(dataset.preset_indexes_helper,
-                                                        config.train.normalize_losses)
+                                                        config.train.normalize_losses,
+                                                        cat_bce=config.train.params_cat_bceloss,
+                                                        cat_softmax=(not config.model.params_reg_softmax
+                                                                     and not config.train.params_cat_bceloss),
+                                                        cat_softmax_t=config.train.params_cat_softmax_temperature)
     else:  # Inverse-flow-based loss
         controls_criterion = model.loss.FlowParamsLoss(dataset.preset_indexes_helper,
                                                        extended_ae_model.ae_model.flow_inverse_function,

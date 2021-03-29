@@ -9,10 +9,15 @@ See the actual training function in train.py
 import importlib  # to reload config.py between each run
 import numpy as np
 import copy
+import time
+
+import torch
 
 import train
 import utils.exception
 
+
+# TODO intercept Ctrl-C sigint and ask confirmation
 
 
 
@@ -29,55 +34,38 @@ Please write two lists of dicts, such that:
 train_all_k_folds = True
 
 
-# Run 0
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '20_dex3op_numonly_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 320,
-                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
-                                                 [1, 2, 3]),
-                          'synth_vst_params_learned_as_categorical': None})
-train_config_mods.append({'main_cuda_device_idx': 1})
-# Run 1
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '21_dex6op_numonly_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 590,
-                          'synth_vst_params_learned_as_categorical': None})
-train_config_mods.append({'main_cuda_device_idx': 1})
-# Run 2
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '22_dex3op_vstcat_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 320,
-                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
-                                                 [1, 2, 3]),
-                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
-train_config_mods.append({'main_cuda_device_idx': 1})
-# Run 3
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '23_dex6op_vstcat_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 590,
-                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
-train_config_mods.append({'main_cuda_device_idx': 1})
+
 # Run 4
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '24_dex3op_all<=32_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 320,
-                          'dataset_synth_args': ([1, 2, 7, 8, 9, 14, 28, 3, 4, 11, 16, 18],
-                                                 [1, 2, 3]),
+"""
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '14b_dex3op_all<=32_1midi',
+                          'dataset_synth_args': (None, [1, 2, 3]),
                           'synth_vst_params_learned_as_categorical': 'all<=32'})
-train_config_mods.append({'main_cuda_device_idx': 1})
+train_config_mods.append({'main_cuda_device_idx': 0})
+"""
 # Run 5
-model_config_mods.append({'name': 'MLPVAE',
-                          'run_name': '25_dex6op_all<=32_1midi',
-                          'params_regression_architecture': 'mlp_3l1024',
-                          'dim_z': 590,
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '15b_dex6op_all<=32_1midi',
                           'synth_vst_params_learned_as_categorical': 'all<=32'})
 train_config_mods.append({'main_cuda_device_idx': 1})
 
+
+# TODO ================================ Stacked spectrograms models ==================================================
+# Run 0
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '44b_dex3op_all<=32_6stack',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': True,
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          })
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 1
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '45b_dex6op_all<=32_6stack',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': True,
+                          })
+train_config_mods.append({'main_cuda_device_idx': 1})
 
 
 
@@ -145,3 +133,12 @@ if __name__ == "__main__":
         print("=============== Enqueued Training Run {}/{} has finished ==============="
               .format(run_index+1, len(model_config_mods)))
         print("======================================================================")
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        # Maybe PyTorch / Python GC need some time to empty CUDA buffers...
+        # An out-of-memory crash remains unexplained
+        time.sleep(20)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
