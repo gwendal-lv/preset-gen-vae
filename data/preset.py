@@ -403,7 +403,10 @@ class DexedPresetsParams(PresetsParams):
     def __init__(self, dataset,
                  full_presets: Optional[torch.Tensor] = None, learnable_presets: Optional[torch.Tensor] = None):
         super().__init__(dataset, full_presets, learnable_presets)
-        self._algos = dataset.algos  # dataset must be a DexedPresetDataset
+        # dataset must be a DexedPresetDataset
+        self._algos = dataset.algos
+        if self._algos is None or len(self._algos) == 0:
+            self._algos = list(range(1, 33))
         # find algo column index in a learnable presets params tensor
         self._algo_learnable_index = self.idx_helper.full_to_learnable[4]
 
