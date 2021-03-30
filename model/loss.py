@@ -1,5 +1,5 @@
 
-from collections.abc import Iterable
+from typing import Iterable, Sequence, Optional
 import numpy as np
 
 import torch
@@ -194,7 +194,15 @@ class QuantizedNumericalParamsLoss:
 
     This loss breaks the computation path (.backward cannot be applied to it).
     """
-    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss=nn.MSELoss()):
+    def __init__(self, idx_helper: PresetIndexesHelper, numerical_loss=nn.MSELoss(),
+                 limited_vst_params_indexes: Optional[Sequence] = None):
+        """
+
+        :param idx_helper:
+        :param numerical_loss:
+        :param limited_vst_params_indexes: List of VST params to include into to the loss computation. Can be uses
+            to measure performance of specific groups of params. Set to None to include all numerical parameters.
+        """
         self.idx_helper = idx_helper
         self.numerical_loss = numerical_loss
         # Cardinality checks
@@ -203,6 +211,7 @@ class QuantizedNumericalParamsLoss:
         # Number of numerical parameters considered for this loss (after cat->num conversions). For tensor pre-alloc
         self.num_params_count = len(self.idx_helper.num_idx_learned_as_num)\
                                 + len(self.idx_helper.num_idx_learned_as_cat)
+        self.limited_vst_params_indexes = limited_vst_params_indexes
 
     def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
         """ Returns the loss for numerical VST params only (searched in u_in and u_out).
@@ -213,9 +222,16 @@ class QuantizedNumericalParamsLoss:
         # pre-allocate tensors
         u_in_num = torch.empty((minibatch_size, self.num_params_count), device=u_in.device, requires_grad=False)
         u_out_num = torch.empty((minibatch_size, self.num_params_count), device=u_in.device, requires_grad=False)
-        cur_num_tensors_col = 0  # Column-by-column tensors filling
+        # if limited vst indexes: fill with zeros (some allocated cols won't be used). Slow but used for eval only.
+        if self.limited_vst_params_indexes is not None:
+            u_in_num[:, :], u_out_num[:, :] = 0.0, 0.0
+        # Column-by-column tensors filling
+        cur_num_tensors_col = 0
         # quantize numerical learnable representations
         for vst_idx, learn_idx in self.idx_helper.num_idx_learned_as_num.items():
+            if self.limited_vst_params_indexes is not None:  # if limited vst indexes:
+                if vst_idx not in self.limited_vst_params_indexes:  # continue if this param is not included
+                    continue
             param_batch = u_in[:, learn_idx].detach()
             u_in_num[:, cur_num_tensors_col] = param_batch  # Data copy - does not modify u_in
             param_batch = u_out[:, learn_idx].detach()
@@ -224,8 +240,11 @@ class QuantizedNumericalParamsLoss:
                 param_batch = torch.round(param_batch * (cardinal - 1.0)) / (cardinal - 1.0)
             u_out_num[:, cur_num_tensors_col] = param_batch
             cur_num_tensors_col += 1
-        # convert one-hot encoded categorical learnable representations to (quantized) numerical
+        # convert one-hot encoded learnable representations of (quantized) numerical VST params
         for vst_idx, learn_indexes in self.idx_helper.num_idx_learned_as_cat.items():
+            if self.limited_vst_params_indexes is not None:  # if limited vst indexes:
+                if vst_idx not in self.limited_vst_params_indexes:  # continue if this param is not included
+                    continue
             cardinal = len(learn_indexes)
             # Classes as column-vectors (for concatenation)
             in_classes = torch.argmax(u_in[:, learn_indexes], dim=-1).detach().type(torch.float)
@@ -233,23 +252,32 @@ class QuantizedNumericalParamsLoss:
             out_classes = torch.argmax(u_out[:, learn_indexes], dim=-1).detach().type(torch.float)
             u_out_num[:, cur_num_tensors_col] = out_classes / (cardinal-1.0)
             cur_num_tensors_col += 1
-        assert cur_num_tensors_col == self.num_params_count  # size check
+        # Final size checks
+        if self.limited_vst_params_indexes is None:
+            assert cur_num_tensors_col == self.num_params_count
+        else:
+            pass  # No size check for limited params (a list with unlearned and/or cat params can be provided)
+            #  assert cur_num_tensors_col == len(self.limited_vst_params_indexes)
         return self.numerical_loss(u_out_num, u_in_num)  # Positive diff. if output > input
 
 
 
 class CategoricalParamsAccuracy:
     """ Only categorical parameters are involved in this loss computation. """
-    def __init__(self, idx_helper: PresetIndexesHelper, reduce=True, percentage_output=True):
+    def __init__(self, idx_helper: PresetIndexesHelper, reduce=True, percentage_output=True,
+                 limited_vst_params_indexes: Optional[Sequence] = None):
         """
         :param idx_helper: allows this class to know which params are categorical
         :param reduce: If True, an averaged accuracy will be returned. If False, a dict of accuracies (keys =
           vst param indexes) is returned.
         :param percentage_output: If True, accuracies in [0.0, 100.0], else in [0.0, 1.0]
+        :param limited_vst_params_indexes: List of VST params to include into to the loss computation. Can be uses
+            to measure performance of specific groups of params. Set to None to include all numerical parameters.
         """
         self.idx_helper = idx_helper
         self.reduce = reduce
         self.percentage_output = percentage_output
+        self.limited_vst_params_indexes = limited_vst_params_indexes
 
     def __call__(self, u_out: torch.Tensor, u_in: torch.Tensor):
         """ Returns accuracy (or accuracies) for all categorical VST params.
@@ -258,6 +286,9 @@ class CategoricalParamsAccuracy:
         accuracies = dict()
         # Accuracy of numerical learnable representations (involves quantization)
         for vst_idx, learn_idx in self.idx_helper.cat_idx_learned_as_num.items():
+            if self.limited_vst_params_indexes is not None:  # if limited vst indexes:
+                if vst_idx not in self.limited_vst_params_indexes:  # continue if this param is not included
+                    continue
             cardinal = self.idx_helper.vst_param_cardinals[vst_idx]
             param_batch = torch.unsqueeze(u_in[:, learn_idx].detach(), 1)  # Column-vector
             # Class indexes, from 0 to cardinal-1
@@ -267,6 +298,9 @@ class CategoricalParamsAccuracy:
             accuracies[vst_idx] = (target_classes == out_classes).count_nonzero().item() / target_classes.numel()
         # accuracy of one-hot encoded categorical learnable representations
         for vst_idx, learn_indexes in self.idx_helper.cat_idx_learned_as_cat.items():
+            if self.limited_vst_params_indexes is not None:  # if limited vst indexes:
+                if vst_idx not in self.limited_vst_params_indexes:  # continue if this param is not included
+                    continue
             target_classes = torch.argmax(u_in[:, learn_indexes], dim=-1)  # New tensor allocated
             out_classes = torch.argmax(u_out[:, learn_indexes], dim=-1)  # New tensor allocated
             accuracies[vst_idx] = (target_classes == out_classes).count_nonzero().item() / target_classes.numel()

@@ -31,11 +31,12 @@ eval.models_names = [  # - - - 16k samples dataset - - -
                      #'FlVAE/35_dex6op_all<=32_6midi',
                      #'FlVAE/44_dex3op_all<=32_6stack',
                      #'FlVAE/45_dex6op_all<=32_6stack',
-                     # - - - 30k samples full dataset - - -
-                     # TODO
+                     # - - - 30k samples full dataset ('b' suffix means 'big') - - -
+                     'FlVAE2/14b_dex3op_all<=32_1midi',
+                     'FlVAE2/15b_dex6op_all<=32_1midi'
                      ]
 eval.dataset = 'test'  # Do not use 'test' dataset during models development
-eval.override_previous_eval = False  # If True, all models be re-evaluated (might be very long)
+eval.override_previous_eval = True  # If True, all models be re-evaluated (might be very long)
 eval.k_folds_count = 5  # 5  # 0 means do not automatically all k-folds trains
 
 eval.minibatch_size = 1  # Reduced mini-batch size not to reserve too much GPU RAM. 1 <=> per-preset metrics

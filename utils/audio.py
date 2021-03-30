@@ -3,7 +3,7 @@ Audio utils (spectrograms, G&L phase reconstruction, ...)
 """
 
 import warnings
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -138,11 +138,12 @@ class SimilarityEvaluator:
         sc = np.linalg.norm(self.stft[0] - self.stft[1], ord='fro') / np.linalg.norm(self.stft[0], ord='fro')
         return (sc, self.stft) if return_spectrograms else sc
 
-    def get_mae_mfcc(self, return_mfccs=True):
+    def get_mae_mfcc(self, return_mfccs=True, n_mfcc: Optional[int] = None):
         """ Returns the Mean Absolute Error on MFCCs, and the MFCCs themselves.
         Uses librosa default MFCCs configuration: TODO precise
         """
-        mfcc = [librosa.feature.mfcc(x, sr=self.sr, n_mfcc=self.n_mfcc) for x in self.x_wav]
+        mfcc = [librosa.feature.mfcc(x, sr=self.sr, n_mfcc=(self.n_mfcc if n_mfcc is None else n_mfcc))
+                for x in self.x_wav]
         mae = np.abs(mfcc[0] - mfcc[1]).mean()
         return (mae, mfcc) if return_mfccs else mae
 

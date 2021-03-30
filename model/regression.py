@@ -85,8 +85,10 @@ class MLPRegression(nn.Module):
                 self.reg_model.add_module('fc{}'.format(l + 1), nn.Linear(dim_z, num_hidden_neurons))
             else:
                 self.reg_model.add_module('fc{}'.format(l + 1), nn.Linear(num_hidden_neurons, num_hidden_neurons))
-            # No dropout on the last layer before regression layer. TODO test remove dropout on 1st hidden layer
+            # No BN or dropouts in the 2 last FC layers
+            # Dropout in the deepest hidden layers is absolutely necessary (strong overfit otherwise).
             if l < (num_hidden_layers - 1):
+                self.reg_model.add_module('bn{}'.format(l + 1), nn.BatchNorm1d(num_features=num_hidden_neurons))
                 self.reg_model.add_module('drp{}'.format(l + 1), nn.Dropout(dropout_p))
             self.reg_model.add_module('act{}'.format(l + 1), nn.ReLU())
         self.reg_model.add_module('fc{}'.format(num_hidden_layers + 1), nn.Linear(num_hidden_neurons,

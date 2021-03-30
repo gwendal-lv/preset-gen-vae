@@ -164,3 +164,25 @@ class LatentMetric:
             self._compute_correlation()
         return self._spearman_corr_matrix_zerodiag
 
+
+
+class CorrelationMetric:  # TODO merge into latent metric?
+    def __init__(self, dim, dataset_len):
+        self.data = np.empty((dataset_len, dim))
+        self.observations_count = 0  # number of non-empty rows
+
+    def append_batch(self, batch):
+        batch_np = batch.clone().detach().cpu().numpy()
+        start_idx = self.observations_count
+        end_idx = self.observations_count + batch_np.shape[0]
+        self.data[start_idx:end_idx, :] = batch_np
+        self.observations_count = end_idx
+
+    def get_spearman_corr_and_p_values(self):
+        """
+        Returns a tuple with the spearman r corr matrix and the corresponding p-values
+        (null hypothesis H0: "two sets of data are uncorrelated")
+        """
+        assert self.observations_count == self.data.shape[0]  # All dataset elements must have been appended
+        return scipy.stats.spearmanr(self.data, axis=0)  # observations in rows, variables in cols
+
