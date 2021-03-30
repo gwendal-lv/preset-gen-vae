@@ -11,3 +11,5 @@ saved_archives/*
 librenderman.so
 synth/librenderman.so
 
+# Folder of figures (matplotlib or others)
+figures/*
