@@ -135,6 +135,7 @@ class SimilarityEvaluator:
         """ Returns the Spectral Convergence of input sounds, and the two linear-scale spectrograms
             used to compute SC (e.g. for plotting them later). SC: see https://arxiv.org/abs/1808.06719 """
         # Frobenius norm is actually the default numpy matrix norm
+        # TODO check for 0.0 frob norm of stft[0]
         sc = np.linalg.norm(self.stft[0] - self.stft[1], ord='fro') / np.linalg.norm(self.stft[0], ord='fro')
         return (sc, self.stft) if return_spectrograms else sc
 

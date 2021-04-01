@@ -1,5 +1,5 @@
-
-# Only exported graphs will be LFS-commited
-*.graffle
-*.pages
-
+_site
+.sass-cache
+.jekyll-cache
+.jekyll-metadata
+vendor

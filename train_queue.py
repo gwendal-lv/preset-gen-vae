@@ -31,18 +31,17 @@ Please write two lists of dicts, such that:
 """
 
 # automatically train all cross-validation folds?
-train_all_k_folds = True
+train_all_k_folds = False
 
 
 
-# Run 4
 """
+# Run 4
 model_config_mods.append({'name': 'FlVAE2',
                           'run_name': '14b_dex3op_all<=32_1midi',
                           'dataset_synth_args': (None, [1, 2, 3]),
                           'synth_vst_params_learned_as_categorical': 'all<=32'})
 train_config_mods.append({'main_cuda_device_idx': 0})
-"""
 # Run 5
 model_config_mods.append({'name': 'FlVAE2',
                           'run_name': '15b_dex6op_all<=32_1midi',
@@ -66,6 +65,19 @@ model_config_mods.append({'name': 'FlVAE2',
                           'stack_spectrograms': True,
                           })
 train_config_mods.append({'main_cuda_device_idx': 1})
+"""
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '45b_dex6op_all<=32_6stack_kf3',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': True,
+                          })
+train_config_mods.append({'main_cuda_device_idx': 1, 'current_k_fold': 3})
+model_config_mods.append({'name': 'FlVAE2',
+                          'run_name': '45b_dex6op_all<=32_6stack_kf4',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': True,
+                          })
+train_config_mods.append({'main_cuda_device_idx': 1, 'current_k_fold': 4})
 
 
 

@@ -234,7 +234,7 @@ class QuantizedNumericalParamsLoss:
                     continue
             param_batch = u_in[:, learn_idx].detach()
             u_in_num[:, cur_num_tensors_col] = param_batch  # Data copy - does not modify u_in
-            param_batch = u_out[:, learn_idx].detach()
+            param_batch = u_out[:, learn_idx].detach().clone()
             if self.idx_helper.vst_param_cardinals[vst_idx] > 0:  # don't quantize <0 cardinal (continuous)
                 cardinal = self.idx_helper.vst_param_cardinals[vst_idx]
                 param_batch = torch.round(param_batch * (cardinal - 1.0)) / (cardinal - 1.0)
