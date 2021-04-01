@@ -68,7 +68,10 @@ def train_config():
     if start_checkpoint is not None:
         extended_ae_model.load_state_dict(start_checkpoint['ae_model_state_dict'])  # GPU tensor params
     extended_ae_model.eval()
-    logger.init_with_model(extended_ae_model, config.model.input_tensor_size)  # model must not be parallel
+    # will write tensorboard graph and torchinfo txt summary. model must not be parallel
+    logger.init_with_model(extended_ae_model, config.model.input_tensor_size)  # main model
+    logger.write_model_summary(extended_ae_model.reg_model, (config.train.minibatch_size, config.model.dim_z),
+                               "reg")  # Another summary write
 
 
     # ========== Training devices (GPU(s) only) ==========

@@ -152,7 +152,7 @@ class RunLogger:
         os.makedirs(self.run_dir)
         os.makedirs(self.checkpoints_dir)
 
-    def init_with_model(self, model, input_tensor_size):
+    def init_with_model(self, main_model, input_tensor_size):
         """ Finishes to initialize this logger given the fully-build model. This function must be called
          after all checks (configuration consistency, etc...) have been performed, because it overwrites files. """
         # Write config file on startup only - any previous config file will be erased
@@ -160,13 +160,16 @@ class RunLogger:
         config_dict = {'model': self.model_config.__dict__, 'train': self.train_config.__dict__}
         with open(self.run_dir.joinpath('config.json'), 'w') as f:
             json.dump(config_dict, f)
-        # TODO consider several models
+        if not self.restart_from_checkpoint:  # Graphs written at epoch 0 only
+            self.write_model_summary(main_model, input_tensor_size, 'VAE')
+            self.tensorboard.add_graph(main_model, torch.zeros(input_tensor_size))
+        self.epoch_start_datetimes = [datetime.datetime.now()]
+
+    def write_model_summary(self, model, input_tensor_size, model_name):
         if not self.restart_from_checkpoint:  # Graphs written at epoch 0 only
             description = torchinfo.summary(model, input_size=input_tensor_size, depth=5, device='cpu', verbose=0)
-            with open(self.run_dir.joinpath('torchinfo_summary.txt'), 'w') as f:
+            with open(self.run_dir.joinpath('torchinfo_summary_{}.txt'.format(model_name)), 'w') as f:
                 f.write(description.__str__())
-            self.tensorboard.add_graph(model, torch.zeros(input_tensor_size))
-        self.epoch_start_datetimes = [datetime.datetime.now()]
 
     def get_previous_config_from_json(self):
         with open(self.run_dir.joinpath('config.json'), 'r') as f:
