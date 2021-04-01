@@ -17,6 +17,8 @@ import torch
 import torch.nn as nn
 import pandas as pd
 
+import torchinfo
+
 import data.build
 import data.preset
 import data.abstractbasedataset
@@ -114,6 +116,9 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
     extended_ae_model = extended_ae_model.to(device).eval()
     ae_model, reg_model = extended_ae_model.ae_model, extended_ae_model.reg_model
     torch.set_grad_enabled(False)
+    if eval_config.verbosity >= 3:
+        torchinfo.summary(extended_ae_model.reg_model, input_size=(eval_config.minibatch_size, model_config.dim_z),
+                          depth=5, device='cpu')
     # Eval midi notes
     eval_midi_notes = (dataset.midi_notes if forced_midi_notes is None else forced_midi_notes)
     if eval_config.verbosity >= 1:
@@ -227,6 +232,7 @@ def evaluate_model(path_to_model_dir: Path, eval_config: utils.config.EvalConfig
         os.mkdir(path_to_model_dir.joinpath('eval_files'))
     except FileExistsError:
         pass  # Directory was already created
+    assert forced_midi_notes is None  # refactor the entire "__MULTI_NOTE__" special (and useless?) eval...
     spearman_r, spearman_pvalues = z0_metric.get_spearman_corr_and_p_values()
     np.save(path_to_model_dir.joinpath('eval_files/z0_spearman_r__{}.npy'.format(eval_config.dataset)), spearman_r)
     np.save(path_to_model_dir.joinpath('eval_files/z0_spearman_pvalues__{}.npy'.format(eval_config.dataset)),

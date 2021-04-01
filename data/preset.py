@@ -404,9 +404,7 @@ class DexedPresetsParams(PresetsParams):
                  full_presets: Optional[torch.Tensor] = None, learnable_presets: Optional[torch.Tensor] = None):
         super().__init__(dataset, full_presets, learnable_presets)
         # dataset must be a DexedPresetDataset
-        self._algos = dataset.algos
-        if self._algos is None or len(self._algos) == 0:
-            self._algos = list(range(1, 33))
+        self._algos = dataset.algos  # if all algos are used: this must remain an empty list (same as dataset's)
         # find algo column index in a learnable presets params tensor
         self._algo_learnable_index = self.idx_helper.full_to_learnable[4]
 
@@ -426,13 +424,17 @@ class DexedPresetsParams(PresetsParams):
                 classes = torch.argmax(classes_one_hot, dim=-1)  # classes = dataset algo indexes
                 # Actual algorithms must be found row-by-row...
                 for row in range(classes.size(-1)):
-                    full_presets[row, 4] = (self._algos[classes[row].item()] - 1) / 31.0
+                    # TODO manage this properly... maybe this whole class should be re-written
+                    temp_algos = self._algos if len(self._algos) > 0 else list(range(1, 33))
+                    full_presets[row, 4] = (temp_algos[classes[row].item()] - 1) / 31.0
         return full_presets
 
     def get_learnable(self) -> torch.Tensor:
         learnable_presets = super().get_learnable()
         # Algo rescale not needed if this class was built from inferred presets
         if self.is_from_full_presets:
+            # TODO deactivate the "algo rescale" feature? it should be rewritten from scratch or discarded
+            # Numerical algo representation is a bad idea anyways
             if self._algo_learnable_index is not None:
                 """ Transforms the floating-point algorithm parameter (32 values in [0.0, 1.0]) into a new quantized
                 float value (len(self.algos) values in [0.0, 1.0]). This new quantization uses the limited number

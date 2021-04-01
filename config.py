@@ -17,8 +17,8 @@ from utils.config import _Config  # Empty class - to ease JSON serialization of 
 
 
 model = _Config()
-model.name = "ExtVAE3"
-model.run_name = '00'  # run: different hyperparams, optimizer, etc... for a given model
+model.name = "FlVAE2"
+model.run_name = '00_debug'  # run: different hyperparams, optimizer, etc... for a given model
 model.allow_erase_run = True  # If True, a previous run with identical name will be erased before training
 # See model/encoder.py to view available architectures. Decoder architecture will be as symmetric as possible.
 model.encoder_architecture = 'speccnn8l1_bn'
