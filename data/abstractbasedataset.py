@@ -156,6 +156,20 @@ class PresetDataset(torch.utils.data.Dataset, ABC):
         """ Total number of presets currently available from this dataset. """
         return len(self.valid_preset_UIDs)
 
+    def get_index_from_preset_UID(self, preset_UID):
+        """ Returns the dataset index (or list of indexes) of a preset described by its UID. """
+        try:
+            index_in_valid_list = list(self.valid_preset_UIDs).index(preset_UID)
+        except ValueError:
+            raise ValueError("Preset UID {} is not a valid preset UID (it might have been excluded from this dataset)"
+                             .format(preset_UID))
+        # Check: are there multiple MIDI notes per preset? (dataset size artificial increase)
+        if self.midi_notes_per_preset > 1 and not self._multichannel_stacked_spectrograms:  # 'annoying' case
+            base_index = index_in_valid_list * self.midi_notes_per_preset
+            return [base_index + i for i in range(self.midi_notes_per_preset)]
+        else:  # 'usual' case: each UID has its own unique dataset index
+            return index_in_valid_list
+
     @property
     def default_midi_note(self):
         """ Default MIDI pitch and velocity, e.g. for audio renders evaluation, labelling, ... """

@@ -11,5 +11,8 @@ saved_archives/*
 librenderman.so
 synth/librenderman.so
 
-# Folder of figures (matplotlib or others)
+# Folder of figures (matplotlib or others) and audio/images exports
 figures/*
+exports/*
+
+
