@@ -30,96 +30,96 @@ TEMP WEBSITE
             <th>End preset (6/6)</th>
         </tr>
         <tr> <!-- zK interp -->
-            <td>
+            <th scope="row">
                 Latent space
-            </td>
+            </th>
             <td>
-                <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio0.mp3" type="audio/ogg" />
+                <audio controls class=small_control> 
+                    <source src="assets/interpolation/000348to004018_zK_audio0.mp3" type="audio/mp3" />
                 </audio>
                 <br />
                 <img src="assets/interpolation/000348to004018_zK_spec0.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio1.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio1.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec1.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio2.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio2.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec2.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio3.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio3.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec3.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio4.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio4.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec4.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio5.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio5.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec5.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_zK_audio6.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_zK_audio6.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_zK_spec6.png"/>
             </td>
         </tr>
         <tr> <!-- naive interp -->
-            <td>
+            <th scope="row">
                 VST parameters<br/> (naive)
-            </td>
+            </th>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio0.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio0.mp3" type="audio/mp3" />
                 </audio> <br/>
                 <img src="assets/interpolation/000348to004018_naive_spec0.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio1.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio1.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec1.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio2.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio2.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec2.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio3.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio3.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec3.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio4.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio4.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec4.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio5.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio5.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec5.png"/>
             </td>
             <td>
                 <audio controls="" class=small_control> 
-                    <source src="assets/interpolation/000348to004018_naive_audio6.mp3" type="audio/ogg" />
+                    <source src="assets/interpolation/000348to004018_naive_audio6.mp3" type="audio/mp3" />
                 </audio><br/>
                 <img src="assets/interpolation/000348to004018_naive_spec6.png"/>
             </td>
