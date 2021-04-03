@@ -381,7 +381,6 @@ class PresetsParams:
                         n_classes = self.idx_helper.vst_param_cardinals[vst_idx]
                         classes = torch.round(self._full_presets[:, vst_idx] * (n_classes - 1))
                         classes = classes.type(torch.int64)  # index type required
-                        # TODO check if this works with batch size > 1.... (
                         classes_one_hot = torch.nn.functional.one_hot(classes, num_classes=n_classes)
                         learnable_tensor[:, learn_indexes] = classes_one_hot.type(torch.float)
                     else:  # learned as numerical: OK, simple copy
@@ -405,12 +404,14 @@ class DexedPresetsParams(PresetsParams):
         super().__init__(dataset, full_presets, learnable_presets)
         # dataset must be a DexedPresetDataset
         self._algos = dataset.algos  # if all algos are used: this must remain an empty list (same as dataset's)
+        self._limited_algos = not (self._algos is None or len(self._algos) == 0 or len(self._algos) == 32)
         # find algo column index in a learnable presets params tensor
         self._algo_learnable_index = self.idx_helper.full_to_learnable[4]
 
     def get_full(self, apply_constraints=True) -> torch.Tensor:
         full_presets = super().get_full(apply_constraints)
-        if not self.is_from_full_presets:
+        if not self.is_from_full_presets and self._limited_algos:
+            assert False  # FIXME this whole limited-algorithms section breaks non-limited algorithms
             if self.idx_helper.vst_param_learnable_model[4] == 'num':  # algo learnable: rescale needed (to 32 values)
                 # Direct tensor-column modification
                 algo_col = full_presets[:, 4]  # Vector (len = batch size)
@@ -432,7 +433,8 @@ class DexedPresetsParams(PresetsParams):
     def get_learnable(self) -> torch.Tensor:
         learnable_presets = super().get_learnable()
         # Algo rescale not needed if this class was built from inferred presets
-        if self.is_from_full_presets:
+        if self.is_from_full_presets and self._limited_algos:
+            assert False  # FIXME this whole limited-algorithms section breaks non-limited algorithms
             # TODO deactivate the "algo rescale" feature? it should be rewritten from scratch or discarded
             # Numerical algo representation is a bad idea anyways
             if self._algo_learnable_index is not None:
