@@ -35,11 +35,27 @@ url: ""
 github_username:  gwendal-lv
 
 # Build settings
-theme: minima
+#theme: minima
+theme: minimal-mistakes-jekyll
+remote_theme: "mmistakes/minimal-mistakes"
 plugins:
   - jekyll-feed
+  - jekyll-remote-theme
 
-classes: wide
+minimal_mistakes_skin: "default" # "default", "air", "aqua", "contrast", "dark", "dirt", "neon", "mint", "plum" "sunrise"
+
+repository: gwendal-lv/preset-gen-vae
+
+# TODO doesn't work
+main:
+  - title: "About"
+    url: /about/
+
+atom_feed:
+  hide: true
+
+# TODO re-test wide class
+#classes: wide
 
 # Exclude from processing.
 # The following items will not be processed, by default.
