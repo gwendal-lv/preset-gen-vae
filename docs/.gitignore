@@ -3,3 +3,5 @@ _site
 .jekyll-cache
 .jekyll-metadata
 vendor
+
+preset-gen-vae_gh_pages.code-workspace

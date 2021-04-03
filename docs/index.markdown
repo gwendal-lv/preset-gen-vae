@@ -9,6 +9,10 @@ DAFx21 paper (under review) accompanying material
 
 TEMP WEBSITE
 
+---
+
+# Interpolation
+
 <div class="figure">
     <table>
         <tr>
@@ -17,14 +21,14 @@ TEMP WEBSITE
             <th>Spectrogram</th>
         </tr>
         <tr>
-            <td>Flow reg</td>
+            <td>.ogg non-LFS file test</td>
             <td>
                 <audio controls> 
-                    <source src="assets/audio/preset000000_midi040vel085.mp3">
+                    <source src="assets/interpolation/000348to004018_zK_audio0.ogg" type="audio/ogg" />
                 </audio>
             </td>
             <td>
-                TODO image
+                <img src="assets/interpolation/000348to004018_zK_spec0.png"/>
             </td>
         </tr>
     </table>
