@@ -15,12 +15,139 @@ TEMP WEBSITE
 
 ---
 
-# Interpolation
+# Automatic synthesizer programming
 
-The following examples compare interpolations between two presets.
+These first examples demonstrate how our model can be used to program a [Dexed FM synthesizer](https://github.com/asb2m10/dexed) (Yamaha DX7 clone) to reproduce a given audio input.
+Input sounds were generated using original presets from the held-out test set of our [30k presets dataset](https://github.com/gwendal-lv/preset-gen-vae/blob/main/synth/dexed_presets.sqlite).
+Each preset contains 144 learnable parameters.
 
-- The "latent space" interpolation consists in encoding presets into the latent space using the RealNVP invertible regression flow in its inverse direction.
-Then, a linear interpolation is performed on latent vectors z, which can be converted back into presets using the regression flow in its forward direction.
+
+<!---
+Our architecture is based on a spectral convolutional VAE and integrates an additional decoder to perform a regression on synthesizer parameters.
+The regression neural network is based on RealNVP [^3] invertible flows.
+The general architecture is inspired by Esling et al.[^1], 2020. Modifications and improvements over this original proposal are detailed in our paper.
+-->
+
+==== TODO full table =====
+
+<div class="figure">
+    <table>
+        <tr>
+            <th></th>
+            <th>Orginal preset</th>
+            <th colspan=3 style="text-align: center">Inferred presets* </th>
+        </tr>
+        <tr style="text-align: center">
+            <td></td>
+            <td></td>
+            <td colspan=3>Parameters learnable representation:</td>
+        </tr>
+        <tr>
+            <td></td>
+            <td></td>
+            <td>Num only</td>
+            <td>NumCat</td>
+            <td>NumCat++</td>
+        </tr>
+        <tr>
+            <td>"Rhodes 3"<br/>(harmonic)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/021894_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/021894_GT_spec.png"/>
+            </td>
+            <td>audio<br/>spectrogram</td>
+            <td>audio<br/>spectrogram</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/021894_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/021894_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>"NeutrnPluk"<br/>(harmonic)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/077603_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/077603_GT_spec.png"/>
+            </td>
+            <td>audio<br/>spectrogram</td>
+            <td>audio<br/>spectrogram</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/077603_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/077603_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>"Bass.Synth"<br/>(harmonic)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080440_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080440_GT_spec.png"/>
+            </td>
+            <td>audio<br/>spectrogram</td>
+            <td>audio<br/>spectrogram</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080440_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080440_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>"Vio Solo 1"<br/>(harmonic)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/003203_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/003203_GT_spec.png"/>
+            </td>
+            <td>audio<br/>spectrogram</td>
+            <td>audio<br/>spectrogram</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/003203_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/003203_numcatpp_spec.png"/>
+            </td>
+        </tr>
+    </table>
+</div>
+
+\* Some inferred presets were slightly out of tune, hence their pitch has been manually adjusted to allow for fair comparisons.
+The 'master tune' Dexed control, which was set to 50% during training, was used after preset inference.
+This step could be automated using pitch estimation models such as CREPE[^2] on inferred audio samples.
+
+---
+# Dynamic parameters
+
+TODO compare our best single-channel spectrogram model to our multi-channel proposal.
+
+---
+
+# Interpolation between presets
+
+Compared to most synthesizer programming models, a VAE-based architecture is a *generative* model which can infer new presets.
+Our proposal allows to reduce the error on latent representations of presets.
+
+The following examples compare interpolations between two presets from the held-out test dataset:
+
+- The "latent space" interpolation consists in encoding presets into the latent space using the RealNVP[^3] invertible regression flow in its inverse direction.
+Then, a linear interpolation is performed on latent vectors, which can be converted back into presets using the regression flow in its forward direction.
 
 - The "naive" interpolation consists in a linear interpolation between VST parameters.
 
@@ -267,3 +394,21 @@ Then, a linear interpolation is performed on latent vectors z, which can be conv
         </tr>
     </table>
 </div>
+
+
+---
+# Preset inference from natural samples
+
+TODO with different pitches and velocities
+
+- guitar 
+- oboe/clarinet
+
+- moog synth?
+
+
+---
+
+[^1]: Philippe Esling, Naotake Masuda, Adrien Bardet, Romeo Despres, and Axel Chemla-Romeu-Santos, “Flow synthesizer: Universal audio synthesizer control with normalizing flows,” Applied Sciences, vol. 10, no. 1, pp. 302, 2020. Originally published as a DAFx19 conference paper: [https://arxiv.org/abs/1907.00971](https://arxiv.org/abs/1907.00971)
+[^2]: Jong Wook Kim, Justin Salamon, Peter Li, Juan Pablo Bello. "CREPE: A Convolutional Representation for Pitch Estimation", ICASSP 2018. [https://arxiv.org/abs/1802.06182](https://arxiv.org/abs/1802.06182)
+[^3]: Laurent Dinh, Jascha Sohl-Dickstein, and Samy Bengio, “Density estimation using Real NVP,” International Conference on Learning Representations, 2017. [https://arxiv.org/abs/1605.08803](https://arxiv.org/abs/1605.08803)
