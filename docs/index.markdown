@@ -28,8 +28,6 @@ The regression neural network is based on RealNVP [^3] invertible flows.
 The general architecture is inspired by Esling et al.[^1], 2020. Modifications and improvements over this original proposal are detailed in our paper.
 -->
 
-==== TODO full table =====
-
 <div class="figure">
     <table>
         <tr>
@@ -58,8 +56,8 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/021894_GT_spec.png"/>
             </td>
-            <td>audio<br/>spectrogram</td>
-            <td>audio<br/>spectrogram</td>
+            <td>-</td>
+            <td>-</td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/021894_numcatpp_audio.mp3" type="audio/mp3" />
@@ -77,8 +75,8 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/077603_GT_spec.png"/>
             </td>
-            <td>audio<br/>spectrogram</td>
-            <td>audio<br/>spectrogram</td>
+            <td>-</td>
+            <td>-</td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/077603_numcatpp_audio.mp3" type="audio/mp3" />
@@ -96,8 +94,8 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/080440_GT_spec.png"/>
             </td>
-            <td>audio<br/>spectrogram</td>
-            <td>audio<br/>spectrogram</td>
+            <td>-</td>
+            <td>-</td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/080440_numcatpp_audio.mp3" type="audio/mp3" />
@@ -115,8 +113,8 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/003203_GT_spec.png"/>
             </td>
-            <td>audio<br/>spectrogram</td>
-            <td>audio<br/>spectrogram</td>
+            <td>-</td>
+            <td>-</td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/003203_numcatpp_audio.mp3" type="audio/mp3" />
