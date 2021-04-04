@@ -7,7 +7,7 @@ classes: wide
 
 ---
 
-<link rel="stylesheet" href="/assets/css/styles.css">
+<link rel="stylesheet" href="assets/css/styles.css">
 
 DAFx21 paper (under review) accompanying material
 
