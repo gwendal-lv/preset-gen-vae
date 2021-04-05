@@ -32,15 +32,15 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
     <table>
         <tr>
             <th></th>
-            <th>Orginal preset</th>
-            <th colspan=3 style="text-align: center">Inferred presets* </th>
+            <th>Original preset</th>
+            <th colspan=3 style="text-align: center">Inferred presets <sup>*</sup> </th>
         </tr>
         <tr style="text-align: center">
             <td></td>
             <td></td>
             <td colspan=3>Parameters learnable representation:</td>
         </tr>
-        <tr>
+        <tr style="text-align: center">
             <td></td>
             <td></td>
             <td>Num only</td>
@@ -86,6 +86,25 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
             </td>
         </tr>
         <tr>
+            <td>"Vio Solo 1"<br/>(harmonic)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/003203_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/003203_GT_spec.png"/>
+            </td>
+            <td>-</td>
+            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/003203_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/003203_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
             <td>"Bass.Synth"<br/>(harmonic)</td>
             <td>
                 <audio controls class=small_control> 
@@ -105,30 +124,107 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
             </td>
         </tr>
         <tr>
-            <td>"Vio Solo 1"<br/>(harmonic)</td>
+            <td>"Japanany"<br/>(percussive)</td>
             <td>
                 <audio controls class=small_control> 
-                    <source src="assets/synth_prog/003203_GT_audio.mp3" type="audio/mp3" />
+                    <source src="assets/synth_prog/080737_GT_audio.mp3" type="audio/mp3" />
                 </audio>
                 <br />
-                <img src="assets/synth_prog/003203_GT_spec.png"/>
+                <img src="assets/synth_prog/080737_GT_spec.png"/>
             </td>
             <td>-</td>
             <td>-</td>
             <td>
                 <audio controls class=small_control> 
-                    <source src="assets/synth_prog/003203_numcatpp_audio.mp3" type="audio/mp3" />
+                    <source src="assets/synth_prog/080737_numcatpp_audio.mp3" type="audio/mp3" />
                 </audio>
                 <br />
-                <img src="assets/synth_prog/003203_numcatpp_spec.png"/>
+                <img src="assets/synth_prog/080737_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>"CongaBongo"<br/>(percussive)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/002094_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/002094_GT_spec.png"/>
+            </td>
+            <td>-</td>
+            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/002094_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/002094_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <!-- 
+        <tr>
+            <td>"DigiPerc."<br/>(percussive)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080614_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080614_GT_spec.png"/>
+            </td>
+            <td>-</td>
+            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080614_numcatpp_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080614_numcatpp_spec.png"/>
+            </td>
+        </tr>  -->
+        <tr> <!-- Use HQ .wav files for SFX -->
+            <td>"R2.D2"<br/>(sfx)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080285_GT_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080285_GT_spec.png"/>
+            </td>
+            <td>-</td>
+            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080285_numcatpp_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080285_numcatpp_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>"LazerGun"<br/>(sfx)</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/074754_GT_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/074754_GT_spec.png"/>
+            </td>
+            <td>-</td>
+            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/074754_numcatpp_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/074754_numcatpp_spec.png"/>
             </td>
         </tr>
     </table>
 </div>
 
-\* Some inferred presets were slightly out of tune, hence their pitch has been manually adjusted to allow for fair comparisons.
+<sup>*</sup> <small>Some inferred presets were slightly out of tune, hence their pitch has been manually adjusted to allow for fair comparisons.
 The 'master tune' Dexed control, which was set to 50% during training, was used after preset inference.
-This step could be automated using pitch estimation models such as CREPE[^2] on inferred audio samples.
+This step could be automated using pitch estimation models such as CREPE[^2] on inferred audio samples.</small>
 
 ---
 # Dynamic parameters
@@ -139,8 +235,8 @@ TODO compare our best single-channel spectrogram model to our multi-channel prop
 
 # Interpolation between presets
 
-Compared to most synthesizer programming models, a VAE-based architecture is a *generative* model which can infer new presets.
-Our proposal allows to reduce the error on latent representations of presets.
+The VAE-based architecture is a *generative* model which can infer new presets.
+Compared to previous works, our proposal is able to handle all synthesizer parameters simultaneously and allows to reduce the error on their latent encodings.
 
 The following examples compare interpolations between two presets from the held-out test dataset:
 
