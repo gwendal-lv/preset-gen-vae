@@ -277,7 +277,90 @@ This step could be automated using pitch estimation models such as CREPE[^2] on 
 ---
 # Dynamic parameters
 
-TODO compare our best single-channel spectrogram model to our multi-channel proposal.
+TODO description
+
+<div class="figure">
+    <table>
+        <tr>
+            <th style="text-align: right">Note intensity: </th>
+            <th style="text-align: center">20/127</th>
+            <th style="text-align: center">64/127</th>
+            <th style="text-align: center">127/127</th>
+        </tr>
+        <tr>
+            <td>Original<br/>preset</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_020_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_020_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_064_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_064_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_127_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_GT_midi_060_127_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>Single-channel<br/> input model</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_020_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_020_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_064_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_064_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_127_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_1midi_midi_060_127_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>Multi-channel<br/> input model</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_020_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_020_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_064_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_064_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_127_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/dynamic_prog/midi_velocity/074483_6stack_midi_060_127_spec.png"/>
+            </td>
+        </tr>
+    </table>
+</div>
 
 ---
 
