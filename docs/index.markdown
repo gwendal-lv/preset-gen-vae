@@ -63,7 +63,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/021894_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/021894_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/021894_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/021894_numcatpp_audio.mp3" type="audio/mp3" />
@@ -88,7 +94,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/077603_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/077603_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/077603_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/077603_numcatpp_audio.mp3" type="audio/mp3" />
@@ -113,7 +125,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/003203_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/003203_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/003203_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/003203_numcatpp_audio.mp3" type="audio/mp3" />
@@ -138,7 +156,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/080440_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080440_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080440_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/080440_numcatpp_audio.mp3" type="audio/mp3" />
@@ -163,7 +187,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/080737_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080737_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080737_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/080737_numcatpp_audio.mp3" type="audio/mp3" />
@@ -188,7 +218,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/002094_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/002094_numcat_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/002094_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/002094_numcatpp_audio.mp3" type="audio/mp3" />
@@ -233,7 +269,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/080285_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/080285_numcat_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/080285_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/080285_numcatpp_audio.wav" type="audio/wav" />
@@ -258,7 +300,13 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <br />
                 <img src="assets/synth_prog/074754_numonly_spec.png"/>
             </td>
-            <td>-</td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/synth_prog/074754_numcat_audio.wav" type="audio/wav" />
+                </audio>
+                <br />
+                <img src="assets/synth_prog/074754_numcat_spec.png"/>
+            </td>
             <td>
                 <audio controls class=small_control> 
                     <source src="assets/synth_prog/074754_numcatpp_audio.wav" type="audio/wav" />
