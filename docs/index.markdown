@@ -270,14 +270,20 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
     </table>
 </div>
 
-<sup>*</sup> <small>Some inferred presets were out of tune, hence their pitch has been manually adjusted to allow for fair comparisons.
+<sup>*</sup> <small>Some inferred presets were out of tune hence their pitch has been manually adjusted to allow for fair comparisons.
 The 'master tune' Dexed control, which was set to 50% during training, was used after preset inference.
 This step could be automated using pitch estimation models such as CREPE[^2] on inferred audio samples.</small>
 
 ---
-# Dynamic parameters
+# Learning presets from multiple notes
 
-TODO description
+Most synthesizers provide parameters which modulate sound depending on the intensity and pitch of played notes.
+The paper introduces a convolutional structure for learning these parameters from multi-channel (multiple notes) spectrogram inputs.
+
+The example below shows:
+- an original preset from the test set
+- a preset inferred by a model trained on single-note input data
+- a preset inferred by a model trained on multiple-note input data, which has better learned how the sound should be modulated depending on note intensity
 
 <div class="figure">
     <table>
@@ -622,9 +628,9 @@ Then, a linear interpolation is performed on latent vectors, which can be conver
 
 
 ---
-# Preset inference from natural samples
+# Preset inference from natural/acoustic/other samples
 
-TODO with different pitches and velocities
+TODO ?
 
 - guitar 
 - oboe/clarinet
