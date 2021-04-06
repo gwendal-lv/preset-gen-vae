@@ -36,9 +36,12 @@ eval.models_names = [  # - - - 16k samples dataset - - -
                      #'FlVAE2/15b_dex6op_all<=32_1midi',
                      #'FlVAE2/44b_dex3op_all<=32_6stack'
                      # - - - 30k samples full dataset ('b' suffix means 'big') - - -
+                     'FlVAE3/11b_dex6op_numonly_1midi',
+                     'FlVAE3/13b_dex6op_vstcat_1midi',
                      'FlVAE3/14b_dex3op_all<=32_1midi',
                      'FlVAE3/15b_dex6op_all<=32_1midi',
-                     #'FlVAE3/44b_dex3op_all<=32_6stack'
+                     'FlVAE3/44b_dex3op_all<=32_6stack',
+                     'FlVAE3/45b_dex6op_all<=32_6stack',
                      ]
 eval.dataset = 'test'  # Do not use 'test' dataset during models development
 eval.override_previous_eval = False  # If True, all models be re-evaluated (might be very long)

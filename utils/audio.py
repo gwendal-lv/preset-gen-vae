@@ -2,8 +2,10 @@
 Audio utils (spectrograms, G&L phase reconstruction, ...)
 """
 
+import os
 import warnings
 from typing import Iterable, Sequence, Optional
+import pathlib
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,6 +14,7 @@ import torch
 import torch.fft
 import librosa
 import librosa.display
+import soundfile as sf
 
 
 class Spectrogram:
@@ -269,4 +272,12 @@ class SimpleSampleLabeler:
         print("is_harmonic={}   is_percussive={}".format(self.is_harmonic, self.is_percussive))
 
 
+
+def write_wav_and_mp3(base_path: pathlib.Path, base_name: str, samples, sr):
+    """ Writes a .wav file and converts it to .mp3 using command-line ffmpeg (which must be available). """
+    wav_path_str = "{}".format(base_path.joinpath(base_name + '.wav'))
+    sf.write(wav_path_str, samples, sr)
+    mp3_path_str = "{}".format(base_path.joinpath(base_name + '.mp3'))
+    # mp3 320k will be limited to 160k for mono audio - still too much loss for HF content
+    os.system("ffmpeg -i {} -b:a 320k -y {}".format(wav_path_str, mp3_path_str))
 

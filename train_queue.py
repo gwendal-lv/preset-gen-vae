@@ -17,7 +17,7 @@ import train
 import utils.exception
 
 
-# TODO intercept Ctrl-C sigint and ask confirmation
+# TODO intercept Ctrl-C sigint and ask for confirmation
 
 
 
@@ -34,36 +34,52 @@ Please write two lists of dicts, such that:
 train_all_k_folds = True
 
 
-
+# ========================================== Baseline flow-reg models ===============================================
+# 05/04/2020
 """
-# Run 4
-model_config_mods.append({'name': 'FlVAE3',
-                          'run_name': '14b_dex3op_all<=32_1midi',
-                          'dataset_synth_args': (None, [1, 2, 3]),
-                          'synth_vst_params_learned_as_categorical': 'all<=32'})
-train_config_mods.append({'main_cuda_device_idx': 0})
-"""
-# Run 5
-model_config_mods.append({'name': 'FlVAE3',
-                          'run_name': '15b_dex6op_all<=32_1midi',
-                          'synth_vst_params_learned_as_categorical': 'all<=32'})
-train_config_mods.append({'main_cuda_device_idx': 1})
-# TODO ================================ Stacked spectrograms models ==================================================
-# Run 0
-model_config_mods.append({'name': 'FlVAE3',
-                          'run_name': '44b_dex3op_all<=32_6stack',
-                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
-                          'stack_spectrograms': True,
-                          'dataset_synth_args': (None, [1, 2, 3]),
-                          })
-train_config_mods.append({'main_cuda_device_idx': 1})
 # Run 1
 model_config_mods.append({'name': 'FlVAE3',
-                          'run_name': '45b_dex6op_all<=32_6stack',
-                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
-                          'stack_spectrograms': True,
-                          })
+                          'run_name': '11b_dex6op_numonly_1midi',
+                          'synth_vst_params_learned_as_categorical': None})
 train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 3
+model_config_mods.append({'name': 'FlVAE3',
+                          'run_name': '13b_dex6op_vstcat_1midi',
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 0
+model_config_mods.append({'name': 'FlVAE3',
+                          'run_name': '10b_dex3op_numonly_1midi',
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': None})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 2
+model_config_mods.append({'name': 'FlVAE3',
+                          'run_name': '12b_dex3op_vstcat_1midi',
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+"""
+
+# 05/04/2020
+# =================================== Multi-note train ========================================================
+# Run 0
+model_config_mods.append({'name': 'FlVAE3',
+                          'run_name': '34b_dex3op_all<=32_6midi',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': False,
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          })
+train_config_mods.append({'main_cuda_device_idx': 0})
+# Run 1
+model_config_mods.append({'name': 'FlVAE3',
+                          'run_name': '35b_dex6op_all<=32_6midi',
+                          'midi_notes': ((40, 85), (50, 85), (60, 42), (60, 85), (60, 127), (70, 85)),
+                          'stack_spectrograms': False,
+                          })
+train_config_mods.append({'main_cuda_device_idx': 0})
+
+
 
 
 
