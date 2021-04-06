@@ -6,10 +6,11 @@ Concrete preset Datasets are available from this module but are implemented in t
 
 
 from . import dexeddataset
-from . import divadataset
+# TODO import future datasets
+
 # ====================== Concrete dataset classes ======================
 DexedDataset = dexeddataset.DexedDataset
-DivaDataset = divadataset.DivaDataset
+# TODO add future datasets here
 # ======================================================================
 
 
