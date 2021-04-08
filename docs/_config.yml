@@ -18,7 +18,7 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-title: Synthesizer Programming from VAEs Latent Space
+title: Improving Synthesizer Programming from Variational Autoencoders Latent Space
 email: glevaillant@he2b.be
 description: >- # this means to ignore newlines until "baseurl:"
   DAFx21 paper (under review) accompanying material
