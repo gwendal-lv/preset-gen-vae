@@ -9,9 +9,9 @@ classes: wide
 
 <link rel="stylesheet" href="assets/css/styles.css">
 
-DAFx21 paper (under review) accompanying material
+Accompanying material for the DAFx21 submission "Improving Synthesizer Programming from Variational Autoencoders Latent Space" (under review)
 
-TEMP WEBSITE
+Authors: G. Le Vaillant, T. Dutoit, S. Dekeyser
 
 ---
 
@@ -21,12 +21,6 @@ These first examples demonstrate how our model can be used to program a [Dexed F
 Input sounds were generated using original presets from the held-out test set of our [30k presets dataset](https://github.com/gwendal-lv/preset-gen-vae/blob/main/synth/dexed_presets.sqlite).
 Each preset contains 144 learnable parameters.
 
-
-<!---
-Our architecture is based on a spectral convolutional VAE and integrates an additional decoder to perform a regression on synthesizer parameters.
-The regression neural network is based on RealNVP [^3] invertible flows.
-The general architecture is inspired by Esling et al.[^1], 2020. Modifications and improvements over this original proposal are detailed in our paper.
--->
 
 <div class="figure">
     <table>
@@ -233,26 +227,6 @@ The general architecture is inspired by Esling et al.[^1], 2020. Modifications a
                 <img src="assets/synth_prog/002094_numcatpp_spec.png"/>
             </td>
         </tr>
-        <!-- 
-        <tr>
-            <td>"DigiPerc."<br/>(percussive)</td>
-            <td>
-                <audio controls class=small_control> 
-                    <source src="assets/synth_prog/080614_GT_audio.mp3" type="audio/mp3" />
-                </audio>
-                <br />
-                <img src="assets/synth_prog/080614_GT_spec.png"/>
-            </td>
-            <td>-</td>
-            <td>-</td>
-            <td>
-                <audio controls class=small_control> 
-                    <source src="assets/synth_prog/080614_numcatpp_audio.mp3" type="audio/mp3" />
-                </audio>
-                <br />
-                <img src="assets/synth_prog/080614_numcatpp_spec.png"/>
-            </td>
-        </tr>  -->
         <tr> <!-- Use HQ .wav files for SFX -->
             <td>"R2.D2"<br/>(sfx)</td>
             <td>
@@ -676,18 +650,85 @@ Then, a linear interpolation is performed on latent vectors, which can be conver
 
 
 ---
-# Preset inference from natural/acoustic/other samples
+# Out-of-domain samples
 
-TODO ?
+The following examples show how the model can program the Dexed synthesizer using sounds from acoustic instruments or other synthesizers (with different synthesis abilities).
 
-- guitar 
-- oboe/clarinet
-
-- moog synth?
+<div class="figure">
+    <table>
+        <tr>
+            <th style="text-align: center">Original sound</th>
+            <th style="text-align: center">Inferred preset</th>
+        </tr>
+        <tr>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/reso_organish_60_85_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/reso_organish_60_85_GT_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/reso_organish_60_85_inferred_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/reso_organish_60_85_inferred_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/violin_60_85_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/violin_60_85_GT_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/violin_60_85_inferred_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/violin_60_85_inferred_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/chickenstalk_60_85_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/chickenstalk_60_85_GT_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/chickenstalk_60_85_inferred_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/chickenstalk_60_85_inferred_spec.png"/>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/roboclaver_60_85_GT_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/roboclaver_60_85_GT_spec.png"/>
+            </td>
+            <td>
+                <audio controls class=small_control> 
+                    <source src="assets/other_prog/roboclaver_60_85_inferred_audio.mp3" type="audio/mp3" />
+                </audio>
+                <br />
+                <img src="assets/other_prog/roboclaver_60_85_inferred_spec.png"/>
+            </td>
+        </tr>
+    </table>
+</div>
 
 
 ---
 
-[^1]: Philippe Esling, Naotake Masuda, Adrien Bardet, Romeo Despres, and Axel Chemla-Romeu-Santos, “Flow synthesizer: Universal audio synthesizer control with normalizing flows,” Applied Sciences, vol. 10, no. 1, pp. 302, 2020. Originally published as a DAFx19 conference paper: [https://arxiv.org/abs/1907.00971](https://arxiv.org/abs/1907.00971)
-[^2]: Jong Wook Kim, Justin Salamon, Peter Li, Juan Pablo Bello. "CREPE: A Convolutional Representation for Pitch Estimation", ICASSP 2018. [https://arxiv.org/abs/1802.06182](https://arxiv.org/abs/1802.06182)
+[^2]: Jong Wook Kim, Justin Salamon, Peter Li, Juan Pablo Bello. "CREPE: A Convolutional Representation for Pitch Estimation", IEEE International Conference on Acoustics, Speech, and Signal Processing 2018. [https://arxiv.org/abs/1802.06182](https://arxiv.org/abs/1802.06182)
 [^3]: Laurent Dinh, Jascha Sohl-Dickstein, and Samy Bengio, “Density estimation using Real NVP,” International Conference on Learning Representations, 2017. [https://arxiv.org/abs/1605.08803](https://arxiv.org/abs/1605.08803)
