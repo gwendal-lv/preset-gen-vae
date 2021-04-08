@@ -13,7 +13,7 @@ Accompanying material for the DAFx21 submission "Improving Synthesizer Programmi
 
 Authors: G. Le Vaillant, T. Dutoit, S. Dekeyser
 
-<img src="assets/images/GitHub-mark-64px.png" style="width: 24px"> [gwendal-lv/preset-gen-vae](https://github.com/gwendal-lv/preset-gen-vae)
+<img src="assets/images/GitHub-Mark-64px.png" style="width: 24px"> [gwendal-lv/preset-gen-vae](https://github.com/gwendal-lv/preset-gen-vae)
 
 ---
 
