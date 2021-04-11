@@ -22,6 +22,12 @@ from data.preset import PresetsParams, PresetIndexesHelper
 #torchaudio.set_audio_backend("sox_io")
 
 
+# TODO audio dataset abstract base class? see audiodataset.py
+#     Dataset that reads a folder of natural/acoustic/other sounds (out-of-domain),
+#     __getitem__ would return spectrograms
+#     PresetDataset could inherit from such a class
+
+
 class PresetDataset(torch.utils.data.Dataset, ABC):
     def __init__(self, note_duration,
                  n_fft, fft_hop,  # ftt 1024 hop=512: spectrogram is approx. the size of 5.0s@22.05kHz audio

@@ -281,3 +281,18 @@ def write_wav_and_mp3(base_path: pathlib.Path, base_name: str, samples, sr):
     # mp3 320k will be limited to 160k for mono audio - still too much loss for HF content
     os.system("ffmpeg -i {} -b:a 320k -y {}".format(wav_path_str, mp3_path_str))
 
+
+
+def get_spectrogram_from_audio(audio_samples_path: pathlib.Path, audio_name: str, midi_notes: Sequence):
+    """
+    Builds a dataset-like tensor of spectrogram(s) by loading external audio sample(s).
+    Files to be loaded must be: BASENAME_xxx_yyy.wav where xxx and yyy are the MIDI pitch and velocity.
+
+    :param audio_samples_path: Path to the folder that contains all audio files to be loaded
+    :param audio_name: base name of file(s) to be loaded
+    :param midi_notes: List of tuples of (midi_pitch, midi_velocity) int values. Length of that list will be the
+        number of output tensor spectrogram channels
+    :return: 3d tensor of spectrogram(s)
+    """
+    pass
+

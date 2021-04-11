@@ -1,3 +1,5 @@
 # Stats on spectrograms - computed from pre-rendered spectrograms
 stats/*
 
+# External audio - direct audio datasets (no associated synth presets)
+external_audio/*
