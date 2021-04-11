@@ -226,16 +226,17 @@ class SpectrogramCNN(nn.Module):
                                         layer.Conv2D(512, 1024, [1, 1], [1, 1], 0, [1, 1],
                                                      activation=act(act_p), name_prefix='enc8'),
                                         )
-            # TODO le même mais avec des res-blocks add (avg-pool?)
-            # TODO le même mais + profond (couches sans stride)
-            # TODO le même mais + profond, en remplacer chaque conv 2d par un res-block 2 couches
 
+
+        # TODO res-blocks add (avg-pool?)
+        # TODO stride 2 OR dilation 2, not both (a lot of spectrogram pixels are unused...)
         elif self.architecture == 'speccnn8l1_bn':  # 1.7 GB (RAM) ; 0.12 GMultAdd  (batch 256)
             ''' Where to use BN? 'ESRGAN' generator does not use BN in the first and last conv layers.
             DCGAN: no BN on discriminator in out generator out.
             Our experiments show: much more stable latent loss with no BNbefore the FC that regresses mu/logvar,
             consistent training runs 
-            TODO try BN before act (see DCGAN arch) '''
+            TODO try BN before act (see DCGAN arch)
+            '''
             act = nn.LeakyReLU
             act_p = 0.1  # Activation param
             self.enc_nn = nn.Sequential(layer.Conv2D(1, 8, [5, 5], [2, 2], 2, [1, 1], batch_norm=None,

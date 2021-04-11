@@ -6,6 +6,7 @@
 # Saved models, config, and Tensorboard run logs
 saved/*
 saved_archives/*
+train_queue_backup.py
 
 # symlinks to renderman
 librenderman.so

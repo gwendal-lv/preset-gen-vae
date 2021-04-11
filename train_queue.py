@@ -34,9 +34,52 @@ Please write two lists of dicts, such that:
 train_all_k_folds = True
 
 
-# Run 0 - example
-model_config_mods.append({'name': 'FlVAE3',
-                          'run_name': '15b_dex6op_all<=32_1midi',
+
+
+# ===================================== MLP regression models ======================================================
+# Run 0
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '20b_dex3op_numonly_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 340,
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': None})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 1
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '21b_dex6op_numonly_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 610,
+                          'synth_vst_params_learned_as_categorical': None})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 2
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '22b_dex3op_vstcat_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 340,
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 3
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '23b_dex6op_vstcat_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 610,
+                          'synth_vst_params_learned_as_categorical': 'vst_cat'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 4
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '24b_dex3op_all<=32_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 340,
+                          'dataset_synth_args': (None, [1, 2, 3]),
+                          'synth_vst_params_learned_as_categorical': 'all<=32'})
+train_config_mods.append({'main_cuda_device_idx': 1})
+# Run 5
+model_config_mods.append({'name': 'MLPVAE3',
+                          'run_name': '25b_dex6op_all<=32_1midi',
+                          'params_regression_architecture': 'mlp_3l1024',
+                          'dim_z': 610,
                           'synth_vst_params_learned_as_categorical': 'all<=32'})
 train_config_mods.append({'main_cuda_device_idx': 1})
 

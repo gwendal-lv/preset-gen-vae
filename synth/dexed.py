@@ -20,9 +20,7 @@ import sqlite3
 import io
 import pandas as pd
 
-# DB reading from the package itself
 import pathlib
-#import pkgutil
 
 import librenderman as rm  # A symbolic link to the actual librenderman.so must be found in the current folder
 
