@@ -9,7 +9,7 @@ classes: wide
 
 <link rel="stylesheet" href="assets/css/styles.css">
 
-Accompanying material for the DAFx21 submission "Improving Synthesizer Programming from Variational Autoencoders Latent Space" (under review)
+Accompanying material for the [DAFx21 paper](https://dafx2020.mdw.ac.at/proceedings/papers/DAFx20in21_paper_7.pdf) "Improving Synthesizer Programming from Variational Autoencoders Latent Space"
 
 Authors: G. Le Vaillant, T. Dutoit, S. Dekeyser
 
